@@ -1,4 +1,4 @@
-module Models.Song exposing (Pitch(..), Song, SongLink, SongLinkSection, SongMode(..), pitchDecoder, pitchToString, songDecoder, songLinkDecoder, songLinkSectionDecoder, songModeDecoder)
+module Models.Song exposing (Pitch(..), Song, SongLink, SongLinkSection, SongMode(..), pitchDecoder, pitchToString, songDecoder, songLinkDecoder, songLinkSectionDecoder, songModeDecoder, songModeToString)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
@@ -64,6 +64,16 @@ songLinkDecoder =
 type SongMode
     = Major
     | Minor
+
+
+songModeToString : SongMode -> String
+songModeToString mode =
+    case mode of
+        Major ->
+            "major"
+
+        Minor ->
+            "minor"
 
 
 songModeDecoder : Decoder SongMode

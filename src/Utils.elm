@@ -1,12 +1,16 @@
-port module Utils exposing (Common, RemoteData(..), alert, apiUrl, formatPhone, getRequest, handleJsonResponse, notFoundView, permittedTo, postRequest, romanNumeral, scrollToElement, setToken, spinner)
+port module Utils exposing (Common, RemoteData(..), alert, apiUrl, dateFormatter, eventIsOver, formatPhone, fullDateTimeFormatter, getRequest, handleJsonResponse, notFoundView, permittedTo, postRequest, rawHtml, romanNumeral, scrollToElement, setToken, simpleDateFormatter, simpleDateTimeFormatter, spinner, timeFormatter, timeFromNow)
 
 import Browser.Navigation as Nav
+import DateFormat
 import Html exposing (Html, div, i, text)
 import Html.Attributes exposing (class)
+import Html.Parser
+import Html.Parser.Util
 import Http
 import Json.Decode as Decode exposing (Decoder)
+import Models.Event exposing (FullEvent, Member)
 import Models.Info exposing (Info, Semester)
-import Models.Member exposing (Member)
+import Time exposing (Posix, Zone, millisToPosix, now, posixToMillis, toMonth)
 
 
 
@@ -37,6 +41,16 @@ notFoundView =
         ]
 
 
+rawHtml : String -> List (Html msg)
+rawHtml content =
+    case Html.Parser.run content of
+        Ok nodes ->
+            Html.Parser.Util.toVirtualDom nodes
+
+        Err _ ->
+            []
+
+
 
 ---- TYPES ----
 
@@ -49,12 +63,14 @@ type RemoteData a
 
 
 type alias Common =
-    { user : Member
+    { user : Maybe Member
     , members : List Member
     , info : Info
     , currentSemester : Semester
     , token : String
     , key : Nav.Key
+    , timeZone : Zone
+    , now : Posix
     }
 
 
@@ -75,14 +91,14 @@ getRequest common url expect =
         }
 
 
-postRequest : Common -> String -> Http.Body -> (Result Http.Error () -> msg) -> Cmd msg
+postRequest : Common -> String -> Http.Body -> Http.Expect msg -> Cmd msg
 postRequest common url body expect =
     Http.request
         { method = "GET"
         , url = apiUrl ++ url
         , body = Http.emptyBody
         , headers = [ Http.header "token" common.token ]
-        , expect = Http.expectWhatever expect
+        , expect = expect
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -110,6 +126,113 @@ handleJsonResponse decoder response =
 
                 Ok result ->
                     Ok result
+
+
+fullDateTimeFormatter : Zone -> Posix -> String
+fullDateTimeFormatter zone dateTime =
+    let
+        formattingOptions =
+            [ DateFormat.dayOfWeekNameFull
+            , DateFormat.text ", "
+            , DateFormat.monthNameFull
+            , DateFormat.text " "
+            , DateFormat.dayOfMonthNumber
+            , DateFormat.text ", "
+            , DateFormat.yearNumber
+            , DateFormat.text " "
+            , DateFormat.hourNumber
+            , DateFormat.text ":"
+            , DateFormat.minuteFixed
+            , DateFormat.text " "
+            , DateFormat.amPmUppercase
+            ]
+    in
+    DateFormat.format formattingOptions zone dateTime
+
+
+simpleDateTimeFormatter : Zone -> Posix -> String
+simpleDateTimeFormatter zone dateTime =
+    let
+        formattingOptions =
+            [ DateFormat.monthNameAbbreviated
+            , DateFormat.text " "
+            , DateFormat.dayOfMonthNumber
+            , DateFormat.text " "
+            , DateFormat.hourNumber
+            , DateFormat.text ":"
+            , DateFormat.minuteFixed
+            , DateFormat.text " "
+            , DateFormat.amPmUppercase
+            ]
+    in
+    DateFormat.format formattingOptions zone dateTime
+
+
+timeFormatter : Zone -> Posix -> String
+timeFormatter zone dateTime =
+    let
+        formattingOptions =
+            [ DateFormat.hourNumber
+            , DateFormat.text ":"
+            , DateFormat.minuteFixed
+            , DateFormat.text " "
+            , DateFormat.amPmUppercase
+            ]
+    in
+    DateFormat.format formattingOptions zone dateTime
+
+
+dateFormatter : Zone -> Posix -> String
+dateFormatter zone dateTime =
+    let
+        formattingOptions =
+            [ DateFormat.dayOfWeekNameFull
+            , DateFormat.text ", "
+            , DateFormat.monthNameFull
+            , DateFormat.text " "
+            , DateFormat.dayOfMonthNumber
+            ]
+    in
+    DateFormat.format formattingOptions zone dateTime
+
+
+simpleDateFormatter : Zone -> Posix -> String
+simpleDateFormatter zone dateTime =
+    let
+        formattingOptions =
+            [ DateFormat.monthNumber
+            , DateFormat.text "/"
+            , DateFormat.dayOfMonthNumber
+            ]
+    in
+    DateFormat.format formattingOptions zone dateTime
+
+
+timeFromNow : Common -> Posix -> String
+timeFromNow common then_ =
+    let
+        nowMillis =
+            posixToMillis common.now
+
+        thenMillis =
+            posixToMillis then_
+
+        diffMinutes =
+            (thenMillis - nowMillis) * 1000 // 60
+    in
+    if diffMinutes < 60 then
+        "in " ++ String.fromInt diffMinutes ++ " minutes"
+
+    else if diffMinutes < 60 * 24 then
+        "in " ++ String.fromInt (diffMinutes // 60) ++ " hours"
+
+    else
+        "in " ++ String.fromInt (diffMinutes // (60 * 24)) ++ " days"
+
+
+eventIsOver : Posix -> FullEvent -> Bool
+eventIsOver now event =
+    posixToMillis now < posixToMillis (event.releaseTime |> Maybe.withDefault event.callTime)
 
 
 formatPhone : String -> String
@@ -158,7 +281,7 @@ romanNumeral n =
 
 permittedTo : String -> Member -> Bool
 permittedTo permission user =
-    user.permissions |> List.any (\p -> p == permission)
+    user.permissions |> List.any (\p -> p.name == permission)
 
 
 port setToken : Maybe String -> Cmd msg

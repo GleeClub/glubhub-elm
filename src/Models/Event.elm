@@ -1,9 +1,8 @@
-module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, FullEvent, FullEventAttendance, FullEventGig, Gig, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder)
+module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, EventAttendee, EventCarpool, FullEvent, FullEventAttendance, FullEventGig, Gig, GradeChange, Grades, Member, MemberPermission, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder, gradeChangeDecoder, gradesDecoder, memberDecoder, memberPermissionDecoder)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
-import Models.Info exposing (Uniform, posixDecoder, uniformDecoder)
-import Models.Member exposing (Member, memberDecoder)
+import Models.Info exposing (Enrollment, Uniform, enrollmentDecoder, posixDecoder, uniformDecoder)
 import Time exposing (Posix)
 
 
@@ -282,6 +281,36 @@ attendanceDecoder =
         |> required "minutesLate" int
 
 
+type alias EventAttendee =
+    { member : Member
+    , attendance : SimpleAttendance
+    }
+
+
+eventAttendeeDecoder : Decoder EventAttendee
+eventAttendeeDecoder =
+    Decode.succeed EventAttendee
+        |> custom memberDecoder
+        |> custom simpleAttendanceDecoder
+
+
+type alias SimpleAttendance =
+    { shouldAttend : Bool
+    , didAttend : Bool
+    , confirmed : Bool
+    , minutesLate : Int
+    }
+
+
+simpleAttendanceDecoder : Decoder SimpleAttendance
+simpleAttendanceDecoder =
+    Decode.succeed SimpleAttendance
+        |> required "shouldAttend" bool
+        |> required "didAttend" bool
+        |> required "confirmed" bool
+        |> required "minutesLate" int
+
+
 type alias EventCarpool =
     { id : Int
     , event : Int
@@ -296,7 +325,7 @@ eventCarpoolDecoder =
         |> required "id" int
         |> required "event" int
         |> required "driver" memberDecoder
-        |> required "passengers" Json.Decode.list memberDecoder
+        |> required "passengers" (Decode.list memberDecoder)
 
 
 type alias Grades =
@@ -335,3 +364,71 @@ gradeChangeDecoder =
         |> required "reason" string
         |> required "change" float
         |> required "partialScore" float
+
+
+type alias Member =
+    { email : String
+    , firstName : String
+    , preferredName : Maybe String
+    , lastName : String
+    , fullName : String
+    , phoneNumber : String
+    , picture : Maybe String
+    , passengers : Int
+    , location : String
+    , onCampus : Maybe Bool
+    , about : Maybe String
+    , major : Maybe String
+    , minor : Maybe String
+    , hometown : Maybe String
+    , arrivedAtTech : Maybe Int
+    , gatewayDrug : Maybe String
+    , conflicts : Maybe String
+    , dietaryRestrictions : Maybe String
+    , section : Maybe String
+    , enrollment : Maybe Enrollment
+    , permissions : List MemberPermission
+    , positions : List String
+    , grades : Maybe Grades
+    }
+
+
+memberDecoder : Decoder Member
+memberDecoder =
+    Decode.succeed Member
+        |> required "email" string
+        |> required "firstName" string
+        |> optional "preferredName" (nullable string) Nothing
+        |> required "lastName" string
+        |> required "fullName" string
+        |> required "phoneNumber" string
+        |> optional "picture" (nullable string) Nothing
+        |> required "passengers" int
+        |> required "location" string
+        |> optional "onCampus" (nullable bool) Nothing
+        |> optional "about" (nullable string) Nothing
+        |> optional "major" (nullable string) Nothing
+        |> optional "minor" (nullable string) Nothing
+        |> optional "hometown" (nullable string) Nothing
+        |> optional "arrivedAtTech" (nullable int) Nothing
+        |> optional "gatewayDrug" (nullable string) Nothing
+        |> optional "conflicts" (nullable string) Nothing
+        |> optional "dietaryRestrictions" (nullable string) Nothing
+        |> optional "section" (nullable string) Nothing
+        |> optional "enrollment" enrollmentDecoder Nothing
+        |> optional "permissions" (Decode.list memberPermissionDecoder) []
+        |> optional "positions" (Decode.list string) []
+        |> optional "grades" (nullable gradesDecoder) Nothing
+
+
+type alias MemberPermission =
+    { name : String
+    , eventType : Maybe String
+    }
+
+
+memberPermissionDecoder : Decoder MemberPermission
+memberPermissionDecoder =
+    Decode.succeed MemberPermission
+        |> required "name" string
+        |> optional "eventType" (nullable string) Nothing

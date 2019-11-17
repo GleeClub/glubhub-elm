@@ -1,9 +1,12 @@
-module Page.Events.Setlist exposing (viewEventSetlist)
+module Page.Events.Setlist exposing (Model, Msg(..), init, loadSetlist, update, view, viewSongRow, viewSongTable)
 
-import Html exposing (Html, div, tbody, text)
+import Html exposing (Html, div, table, tbody, td, text, tr)
+import Html.Attributes exposing (class, id)
+import Http
+import Json.Decode as Decode
 import Models.Song exposing (Song, pitchToString, songDecoder)
 import Route exposing (Route)
-import Utils exposing (RemoteData(..), spinner)
+import Utils exposing (Common, RemoteData(..), getRequest, spinner)
 
 
 
@@ -55,12 +58,12 @@ loadSetlist common eventId =
 ---- VIEW ----
 
 
-viewEventSetlist : RemoteData (List Song) -> Html Msg
-viewEventSetlist setlist =
+view : Model -> Html Msg
+view model =
     let
         content =
-            case setlist of
-                NotRequestedYet ->
+            case model.songs of
+                NotAsked ->
                     text ""
 
                 Loading ->
@@ -70,7 +73,7 @@ viewEventSetlist setlist =
                     viewSongTable songs
 
                 Failure ->
-                    viewError
+                    text "whoops"
     in
     div [ id "setlist" ] [ content ]
 
@@ -82,23 +85,27 @@ viewSongTable songs =
 
     else
         table [ class "table is-fullwidth is-striped" ]
-            [ tbody [] songs |> List.indexedMap viewSongRow ]
+            [ tbody [] (songs |> List.indexedMap viewSongRow) ]
 
 
 viewSongRow : Int -> Song -> Html Msg
 viewSongRow index song =
-    tr [ key <| toString song.id ]
-        [ td [] [ text <| toString song.id ]
+    tr []
+        [ td [] [ text <| String.fromInt (index + 1) ]
         , td [ Route.href <| Route.Repertoire (Just song.id) ]
             [ text song.title ]
         , td []
-            [ text song.key
-                |> Maybe.map pitchToString
-                |> Maybe.withDefault "No key"
+            [ text
+                (song.key
+                    |> Maybe.map pitchToString
+                    |> Maybe.withDefault "No key"
+                )
             ]
         , td []
-            [ text song.startingPitch
-                |> Maybe.map pitchToString
-                |> Maybe.withDefault "No starting pitch"
+            [ text
+                (song.startingPitch
+                    |> Maybe.map pitchToString
+                    |> Maybe.withDefault "No starting pitch"
+                )
             ]
         ]

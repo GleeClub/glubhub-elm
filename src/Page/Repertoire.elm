@@ -1,8 +1,8 @@
-module Page.Repertoire exposing (Model, Msg(..), getLink, init, loadSongs, organizeSongs, songDivId, update)
+module Page.Repertoire exposing (Model, Msg(..), getLink, init, loadSongs, noSongSelected, organizeSongs, songDivId, update, view, viewLinkSection, viewLinkTable, viewSelectedSong, viewSongList)
 
 import Browser.Navigation as Nav
-import Html exposing (Html, a, button, div, form, h1, img, input, label, section, span, text)
-import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
+import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, tr)
+import Html.Attributes exposing (class, href, id, placeholder, src, style, target, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
@@ -10,9 +10,10 @@ import Json.Encode as Encode
 import List.Extra exposing (find)
 import MD5
 import Maybe.Extra exposing (filter, isJust)
-import Models.Member exposing (Member, memberDecoder)
+import Models.Event exposing (Member, memberDecoder)
+import Models.Song exposing (Song, SongLinkSection, pitchToString, songDecoder, songModeToString)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, notFoundView, setToken, spinner)
+import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, notFoundView, scrollToElement, setToken, spinner)
 
 
 
@@ -22,13 +23,22 @@ import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, notFoundView,
 type alias Model =
     { common : Common
     , songs : RemoteData (List Song)
-    , selected : Maybe Int
+    , selected : RemoteData Song
     }
 
 
 init : Common -> Maybe Int -> ( Model, Cmd Msg )
-init common selected =
-    ( { common = common, songs = Loading, selected = selected }, loadSongs common )
+init common maybeSongId =
+    let
+        ( toLoadSong, selected ) =
+            case maybeSongId of
+                Just songId ->
+                    ( [ loadSong common songId ], Loading )
+
+                Nothing ->
+                    ( [], NotAsked )
+    in
+    ( { common = common, songs = Loading, selected = selected }, Cmd.batch <| [ loadSongs common ] ++ toLoadSong )
 
 
 songDivId : String
@@ -42,6 +52,7 @@ songDivId =
 
 type Msg
     = OnLoadSongs (Result Http.Error (List Song))
+    | OnLoadSong (Result Http.Error Song)
     | SelectSong Int
 
 
@@ -54,8 +65,19 @@ update msg model =
         OnLoadSongs (Err _) ->
             ( { model | songs = Failure }, Cmd.none )
 
+        OnLoadSong (Ok song) ->
+            ( { model | selected = Loaded song }, scrollToElement songDivId )
+
+        OnLoadSong (Err _) ->
+            ( { model | selected = Failure }, Cmd.none )
+
         SelectSong selected ->
-            ( { model | selected = selected }, scrollToElement songDivId )
+            ( { model | selected = Loading }
+            , Cmd.batch
+                [ loadSong model.common selected
+                , Route.replaceUrl model.common.key <| Route.Repertoire (Just selected)
+                ]
+            )
 
 
 
@@ -64,10 +86,19 @@ update msg model =
 
 loadSongs : Common -> Cmd Msg
 loadSongs common =
-    getRequest common "/repertoire" (Http.expectJson <| Decode.list songDecoder)
+    getRequest common "/repertoire" (Http.expectJson OnLoadSongs <| Decode.list songDecoder)
 
 
-organizeSongs : List Song -> ( List Song, ListSong )
+loadSong : Common -> Int -> Cmd Msg
+loadSong common songId =
+    let
+        url =
+            "/repertoire/" ++ String.fromInt songId ++ "?details=true"
+    in
+    getRequest common url (Http.expectJson OnLoadSong songDecoder)
+
+
+organizeSongs : List Song -> ( List Song, List Song )
 organizeSongs songs =
     let
         sortedSongs =
@@ -111,13 +142,27 @@ view model =
                 , content
                 ]
 
-        ( currentSongList, otherSongList, selectedSongBlock ) =
-            case model.songs of
+        selectedSongBlock =
+            case model.selected of
                 NotAsked ->
-                    ( text "", text "", text "" )
+                    noSongSelected
 
                 Loading ->
-                    ( spinner, spinner, spinner )
+                    spinner
+
+                Loaded song ->
+                    viewSelectedSong song
+
+                Failure ->
+                    text "whoops..."
+
+        ( currentSongList, otherSongList ) =
+            case model.songs of
+                NotAsked ->
+                    ( text "", text "" )
+
+                Loading ->
+                    ( spinner, spinner )
 
                 Loaded songs ->
                     let
@@ -125,15 +170,19 @@ view model =
                             organizeSongs songs
 
                         selectedSong =
-                            model.selected |> Maybe.map (\songId -> songs |> find (\song -> song.id == songId))
+                            case model.selected of
+                                Loaded song ->
+                                    Just song
+
+                                _ ->
+                                    Nothing
                     in
-                    ( viewSongList model.selectedSong currentSongs
-                    , viewSongList model.selectedSong otherSongs
-                    , viewSelectedSong selectedSong
+                    ( viewSongList selectedSong currentSongs
+                    , viewSongList selectedSong otherSongs
                     )
 
-                Error err ->
-                    ( text "Oops", text "I did", text "it again." )
+                Failure ->
+                    ( text "Oops I did", text "it again." )
     in
     div [ id "repertoire" ]
         [ section [ class "section" ]
@@ -144,18 +193,25 @@ view model =
                         , songListBlock "Other" otherSongList
                         ]
                     , div [ class "column" ]
-                        [ div [ class "box", id songDivId ] [ selectedSongBlock ] ]
+                        [ div
+                            [ class "box"
+                            , id songDivId
+                            , style "padding-top" "70px"
+                            , style "margin-top" "-70px"
+                            ]
+                            [ selectedSongBlock ]
+                        ]
                     ]
                 ]
             ]
         ]
 
 
-viewSongList : Maybe Int -> List Song -> Html Msg
-viewSongList selectedId songs =
+viewSongList : Maybe Song -> List Song -> Html Msg
+viewSongList selectedSong songs =
     let
         isSelected song =
-            isJust (selectedId |> filter (\id -> id == song.id))
+            isJust (selectedSong |> filter (\selected -> selected.id == song.id))
 
         songRow song =
             tr
@@ -187,32 +243,32 @@ viewSelectedSong song =
 
         info =
             case song.info of
-                Just info ->
-                    [ p [] [ text info ], br [] [] ]
+                Just songInfo ->
+                    [ p [] [ text songInfo ], br [] [] ]
 
                 Nothing ->
                     []
 
         mode =
             case song.mode of
-                Just mode ->
-                    b [] [ text mode ]
+                Just songMode ->
+                    b [] [ text <| (" " ++ songModeToString songMode) ]
 
                 Nothing ->
                     text ""
 
         key =
             [ p []
-                [ text "Key:"
-                , b [] [ text <| Maybe.withDefault "?" song.key ]
+                [ text "Key: "
+                , b [] [ text (song.key |> Maybe.map pitchToString |> Maybe.withDefault "?") ]
                 , mode
                 ]
             ]
 
         startingPitch =
             [ p []
-                [ text "Starting pitch:"
-                , b [] [ text <| Maybe.withDefault "?" song.startingPitch ]
+                [ text "Starting pitch: "
+                , b [] [ text <| (song.startingPitch |> Maybe.map pitchToString |> Maybe.withDefault "?") ]
                 ]
             ]
     in
@@ -223,7 +279,7 @@ viewSelectedSong song =
             , key
             , startingPitch
             , [ br [] [] ]
-            , [ viewLinkTable <| Maybe.withDefault [] song.linkSections ]
+            , [ viewLinkTable (song.links |> Maybe.withDefault []) ]
             ]
 
 
@@ -232,7 +288,7 @@ viewLinkTable linkSections =
     table [ class "table is-fullwidth" ] <| List.map viewLinkSection linkSections
 
 
-viewLinkSection : SongLinkSection -> Maybe (Html Msg)
+viewLinkSection : SongLinkSection -> Html Msg
 viewLinkSection linkSection =
     let
         sheetMusicLink link =
@@ -253,20 +309,20 @@ viewLinkSection linkSection =
             span [ style "display" "flex", style "align-items" "center" ]
                 [ span [ class "icon has-text-grey-lighter", style "margin-right" ".5rem" ]
                     [ i [ class "fas fa-external-link-alt" ] [] ]
-                , a [ class "button", href <| getLink "video" link.target, target "_blank" ]
+                , a [ class "button", href <| getLink "performance" link.target, target "_blank" ]
                     [ span [ class "icon has-text-danger" ] [ i [ class "fab fa-youtube" ] [] ] ]
-                , p [] [ span [] [ text link.name ] ]
+                , p [] [ span [ style "padding-left" "5px" ] [ text link.name ] ]
                 ]
 
         viewSection =
-            case linkSection.name of
-                "Sheet Music" ->
+            case ( linkSection.name, List.isEmpty linkSection.links ) of
+                ( "Sheet Music", False ) ->
                     Just sheetMusicLink
 
-                "MIDIs" ->
+                ( "MIDIs", False ) ->
                     Just midiLink
 
-                "Performances" ->
+                ( "Performances", False ) ->
                     Just videoLink
 
                 _ ->
@@ -274,9 +330,9 @@ viewLinkSection linkSection =
     in
     case viewSection of
         Just viewer ->
-            tr []
+            tr [ style "border" "none" ]
                 [ td [ style "border" "none" ] [ text linkSection.name ]
-                , td [] <| List.map viewer linkSection.links
+                , td [ style "border" "none" ] <| (List.map viewer linkSection.links |> List.intersperse (text " "))
                 ]
 
         Nothing ->

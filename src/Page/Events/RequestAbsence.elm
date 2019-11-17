@@ -1,15 +1,15 @@
-module Page.Events.AbsenceRequest exposing (viewAbsenceRequest)
+module Page.Events.RequestAbsence exposing (Model, Msg(..), init, submitAbsenceRequest, switchToDetailsTab, update, view)
 
-import Html exposing (Html, a, div, h1, img, section, table, tbody, td, text, textarea, thead, tr)
-import Html.Attributes exposing (class, href, id, src, value)
-import Html.Events exposing (onSubmit)
+import Html exposing (Html, a, button, div, form, h1, img, label, section, table, tbody, td, text, textarea, thead, tr)
+import Html.Attributes exposing (class, href, id, placeholder, src, type_, value)
+import Html.Events exposing (onClick, onSubmit)
 import Http
+import Json.Encode as Encode
 import Maybe.Extra
 import Models.Event exposing (FullEvent)
-import Page.Events exposing (Model, Msg)
-import Route exposing (EventTab, Route, TabDetails)
+import Route exposing (EventTab, Route)
 import Time exposing (Posix)
-import Utils exposing (apiUrl, postRequest)
+import Utils exposing (Common, alert, apiUrl, postRequest)
 
 
 
@@ -49,10 +49,10 @@ update msg model =
             ( model, submitAbsenceRequest model )
 
         SwitchToDetailsTab ->
-            ( model, Cmd.none )
+            ( model, switchToDetailsTab model )
 
         OnSubmit (Ok _) ->
-            ( model, Cmd.batch [ SwitchToDetailsTab, alert "Your request has been submitted. You lazy bum!" ] )
+            ( model, Cmd.batch [ switchToDetailsTab model, alert "Your request has been submitted. You lazy bum!" ] )
 
         OnSubmit (Err _) ->
             ( model, alert "We messed up submitting your request. Please be gentle..." )
@@ -62,6 +62,11 @@ update msg model =
 ---- DATA ----
 
 
+switchToDetailsTab : Model -> Cmd Msg
+switchToDetailsTab model =
+    Route.loadPage <| Route.Events { id = Just model.eventId, tab = Just Route.EventRequestAbsence }
+
+
 submitAbsenceRequest : Model -> Cmd Msg
 submitAbsenceRequest model =
     let
@@ -69,25 +74,26 @@ submitAbsenceRequest model =
             "/absence_requests/" ++ String.fromInt model.eventId
 
         body =
-            Http.jsonBody <| Encode.object [ ( "reason", Encode.string reason ) ]
+            Http.jsonBody <| Encode.object [ ( "reason", Encode.string model.reason ) ]
     in
-    postRequest common url body <| Http.expectWhatever OnSubmit
+    postRequest model.common url body <| Http.expectWhatever OnSubmit
 
 
 
 ---- VIEW ----
 
 
-viewAbsenceRequest reason =
+view model =
     form [ id "absence-request", onSubmit Submit ]
         [ div [ class "field" ]
             [ label [ class "label" ] [ text "Reason" ]
             , div [ class "control" ]
-                [ textarea []
+                [ textarea
                     [ class "textarea"
-                    , value reason
+                    , value model.reason
                     , placeholder "My dog ate my homework."
                     ]
+                    []
                 ]
             ]
         , button [ type_ "button", class "button", onClick SwitchToDetailsTab ]

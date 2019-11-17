@@ -1,4 +1,4 @@
-module Route exposing (AdminTab(..), EventDetailsData, EventRoute, EventTab(..), MinutesRoute, MinutesTab(..), Route(..), adminTabString, eventTabString, fromUrl, href, loadPage, minutesTabString, parser, replaceUrl, routeToString)
+module Route exposing (AdminTab(..), EventRoute, EventTab(..), MinutesRoute, MinutesTab(..), Route(..), adminTabString, eventTabString, fromUrl, href, loadPage, minutesTabString, parser, replaceUrl, routeToString)
 
 import Browser.Navigation as Nav
 import Html exposing (Attribute)
@@ -20,7 +20,6 @@ type Route
     | Events EventRoute
     | Repertoire (Maybe Int)
     | Minutes MinutesRoute
-    | ConfirmAccount
     | ForgotPassword
     | Admin (Maybe AdminTab)
 
@@ -38,23 +37,17 @@ type alias MinutesRoute =
 
 
 type EventTab
-    = EventDetails EventDetailsData
+    = EventDetails
     | EventAttendees
     | EventSetlist
     | EventCarpools
-    | EventRequestAbsence String -- reason for requesting absence
-
-
-type alias EventDetailsData =
-    { confirmedAttendance : Bool
-    , sendingRsvp : Bool
-    }
+    | EventRequestAbsence
 
 
 eventTabString : EventTab -> String
 eventTabString tab =
     case tab of
-        EventDetails _ ->
+        EventDetails ->
             "details"
 
         EventAttendees ->
@@ -66,7 +59,7 @@ eventTabString tab =
         EventCarpools ->
             "carpools"
 
-        EventRequestAbsence _ ->
+        EventRequestAbsence ->
             "request-absence"
 
 
@@ -74,7 +67,7 @@ eventTabParser : String -> Maybe EventTab
 eventTabParser tab =
     case tab of
         "details" ->
-            Just <| EventDetails { confirmedAttendance = False, sendingRsvp = False }
+            Just EventDetails
 
         "attendees" ->
             Just EventAttendees
@@ -86,7 +79,7 @@ eventTabParser tab =
             Just EventCarpools
 
         "request-absence" ->
-            Just <| EventRequestAbsence ""
+            Just EventRequestAbsence
 
         _ ->
             Nothing
@@ -226,16 +219,23 @@ parser =
         , Parser.map Roster (s "roster")
         , Parser.map Profile (s "profile" </> string)
         , Parser.map EditProfile (s "profile")
+
+        -- /events, /events/{id}, and /events/{id}/{tab}
         , Parser.map (Events { id = Nothing, tab = Nothing }) (s "events")
         , Parser.map (\id -> Events { id = Just id, tab = Nothing }) (s "events" </> int)
         , Parser.map (\id tab -> Events { id = Just id, tab = Just tab }) (s "events" </> int </> custom "eventTab" eventTabParser)
+
+        -- /repertoire and /repertoire/{id}
         , Parser.map (Repertoire Nothing) (s "repertoire")
         , Parser.map (\id -> Repertoire (Just id)) (s "repertoire" </> int)
+
+        -- /minutes, /minutes/{id}, and /minutes/{id}/{tab}
         , Parser.map (Minutes { id = Nothing, tab = Nothing }) (s "minutes")
         , Parser.map (\id -> Minutes { id = Just id, tab = Nothing }) (s "minutes" </> int)
         , Parser.map (\id tab -> Minutes { id = Just id, tab = Just tab }) (s "minutes" </> int </> custom "minutesTab" minutesTabParser)
-        , Parser.map ConfirmAccount (s "confirm-account")
         , Parser.map ForgotPassword (s "forgot-password")
+
+        -- /admin and /admin/{tab}
         , Parser.map (Admin Nothing) (s "admin")
         , Parser.map (\tab -> Admin (Just tab)) (s "admin" </> custom "adminTab" adminTabParser)
         ]
@@ -262,7 +262,7 @@ loadPage route =
 
 fromUrl : Url -> Maybe Route
 fromUrl url =
-    { url | path = Maybe.withDefault "" url.fragment, fragment = Nothing }
+    { url | path = url.fragment |> Maybe.withDefault "", fragment = Nothing }
         |> Parser.parse parser
 
 
@@ -319,9 +319,6 @@ routeToString page =
 
                         ( Just id, Just tab ) ->
                             [ "minutes", String.fromInt id, minutesTabString tab ]
-
-                ConfirmAccount ->
-                    [ "confirm-account" ]
 
                 ForgotPassword ->
                     [ "forgot-password" ]

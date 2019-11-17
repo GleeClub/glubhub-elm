@@ -1,16 +1,18 @@
 module Page.Login exposing (LoginRequestState(..), Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
+import Components.Basics as Basics
 import Html exposing (Html, a, button, div, form, h1, img, input, label, section, span, text)
 import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
+import Http exposing (Metadata)
+import Http.Detailed exposing (Error(..))
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
 import MD5
-import Models.Member exposing (Member, memberDecoder)
+import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, notFoundView, setToken, spinner)
+import Utils exposing (Common, RemoteData(..), alert, apiUrl, notFoundView, setToken, spinner)
 
 
 
@@ -21,7 +23,6 @@ type alias Model =
     { email : String
     , password : String
     , state : LoginRequestState
-    , key : Nav.Key
     }
 
 
@@ -31,12 +32,11 @@ type LoginRequestState
     | Error String
 
 
-init : Nav.Key -> ( Model, Cmd Msg )
-init key =
+init : ( Model, Cmd Msg )
+init =
     ( { email = ""
       , password = ""
       , state = NotSentYet
-      , key = key
       }
     , Cmd.none
     )
@@ -50,7 +50,7 @@ type Msg
     = UpdateEmail String
     | UpdatePassword String
     | Submit
-    | OnSubmitLogin (Result Http.Error String)
+    | OnSubmitLogin (Result (Http.Detailed.Error String) ( Metadata, String ))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -65,11 +65,21 @@ update msg model =
         Submit ->
             ( { model | state = Sending }, submitLogin model )
 
-        OnSubmitLogin (Ok token) ->
-            ( model, onSuccessfulLogin token model.key )
+        OnSubmitLogin (Ok ( _, token )) ->
+            ( model, onSuccessfulLogin token )
 
         OnSubmitLogin (Err error) ->
-            ( { model | state = Error "an error occurred" }, Cmd.none )
+            case error of
+                BadStatus _ body ->
+                    case body |> Decode.decodeString (field "token" string) of
+                        Ok token ->
+                            ( model, onSuccessfulLogin token )
+
+                        Err _ ->
+                            ( { model | state = Error "an error occurred" }, alert body )
+
+                _ ->
+                    ( { model | state = Error "an error occurred" }, Cmd.none )
 
 
 
@@ -94,17 +104,17 @@ submitLogin model =
         , url = apiUrl ++ "/login"
         , body = body
         , headers = []
-        , expect = Http.expectJson OnSubmitLogin (field "token" string)
+        , expect = Http.Detailed.expectJson OnSubmitLogin (field "token" string)
         , timeout = Nothing
         , tracker = Nothing
         }
 
 
-onSuccessfulLogin : String -> Nav.Key -> Cmd Msg
-onSuccessfulLogin token key =
+onSuccessfulLogin : String -> Cmd Msg
+onSuccessfulLogin token =
     Cmd.batch
         [ setToken (Just token)
-        , Route.replaceUrl key Route.Home
+        , Route.loadPage Route.Home
         ]
 
 
@@ -116,12 +126,9 @@ view : Model -> Html Msg
 view model =
     div [ class "container fullheight" ]
         [ div [ class "columns is-centered is-vcentered", style "display" "flex" ]
-            [ div [ class "column is-narrow" ]
+            [ Basics.narrowColumn
                 [ form [ id "login", class "box", onSubmit Submit ]
-                    [ h1 [ class "title is-1", style "text-align" "center" ]
-                        [ span [ style "color" "#b4a46a" ] [ text "Glub" ]
-                        , span [ style "color" "#666" ] [ text "Hub" ]
-                        ]
+                    [ logo
                     , emailField model
                     , passwordField model
                     , actionButtons model
@@ -131,47 +138,43 @@ view model =
         ]
 
 
+logo : Html Msg
+logo =
+    h1 [ class "title is-1", style "text-align" "center" ]
+        [ span [ style "color" "#b4a46a" ] [ text "Glub" ]
+        , span [ style "color" "#666" ] [ text "Hub" ]
+        ]
+
+
 emailField : Model -> Html Msg
 emailField model =
-    div [ class "field is-horizontal" ]
-        [ div [ class "field-label is-normal" ]
-            [ label [ class "label" ] [ text "E-mail" ] ]
-        , div [ class "control" ]
-            [ input
-                [ class "input"
-                , type_ "email"
-                , value model.email
-                , onInput UpdateEmail
-                , placeholder "gburdell3@gatech.edu"
-                ]
-                []
-            ]
-        ]
+    Basics.horizontalField
+        { label = "E-mail"
+        , name = "login-email"
+        , type_ = "email"
+        , value = model.email
+        , onInput = UpdateEmail
+        , placeholder = "gburdell3@gatech.edu"
+        }
 
 
 passwordField : Model -> Html Msg
 passwordField model =
-    div [ class "field is-horizontal" ]
-        [ div [ class "field-label is-normal" ]
-            [ label [ class "label" ] [ text "Password" ] ]
-        , div [ class "control" ]
-            [ input
-                [ class "input"
-                , type_ "password"
-                , value model.password
-                , onInput UpdatePassword
-                , placeholder "••••••••"
-                ]
-                []
-            ]
-        ]
+    Basics.horizontalField
+        { label = "Password"
+        , name = "password"
+        , type_ = "password"
+        , value = model.password
+        , onInput = UpdatePassword
+        , placeholder = "••••••••"
+        }
 
 
 actionButtons : Model -> Html Msg
 actionButtons model =
     div [ class "buttons is-right" ]
-        [ button [ type_ "button", class "button", Route.href Route.Home ] [ text "Register" ]
-        , button [ type_ "button", class "button", Route.href Route.Home ] [ text "Forgot" ]
+        [ Basics.linkButton "Register" Route.EditProfile
+        , Basics.linkButton "Forgot" Route.ForgotPassword
         , button
             [ type_ "submit"
             , class "button is-primary"
@@ -182,7 +185,6 @@ actionButtons model =
 
                     _ ->
                         ""
-            , onClick Submit
             ]
             [ text "Sign In" ]
         ]

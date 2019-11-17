@@ -1,99 +1,145 @@
-module Page.Admin exposing (pageList)
+module Page.Admin exposing (Model, Msg(..), allTabs, currentTab, init, pageList, tabText, update, view)
 
-import Html exposing (Html)
+import Html exposing (Html, aside, div, li, section, text, ul)
+import Html.Attributes exposing (class)
+import Html.Events exposing (onClick)
 import Maybe.Extra
 import Models.Event exposing (FullEvent)
 import Page.Events exposing (Msg)
+import Route exposing (AdminTab(..))
+import Utils exposing (Common)
 
 
 
--- <template>
--- 	<div id="events">
--- 		<section class="section">
--- 			<div class="container">
--- 				<div class="columns">
--- 					<div class="column is-narrow">
--- 						<aside class="menu">
--- 							<div class="box">
--- 								<ul class="menu-list">
--- 									<li><router-link to="/officer/create-event">Create Event</router-link></li>
--- 									<li><router-link to="/officer/gig-requests">Gig Requests</router-link></li>
--- 									<li><router-link to="/officer/make-announcement">Make Announcement</router-link></li>
--- 									<li><router-link to="/officer/absence-requests">Absence Requests</router-link></li>
--- 									<li><router-link to="/officer/edit-semester">Edit Semester</router-link></li>
--- 									<li><router-link to="/officer/officers">Officer Positions</router-link></li>
--- 									<li><router-link to="/officer/permissions">Site Permissions</router-link></li>
--- 									<li><router-link to="/officer/uniforms">Uniforms</router-link></li>
--- 									<li><router-link to="/officer/dues">Dues</router-link></li>
--- 									<li><router-link to="/officer/document-links">Document Links</router-link></li>
--- 								</ul>
--- 							</div>
--- 						</aside>
--- 					</div>
--- 					<div class="column">
--- 						<div class="box">
--- 							<component v-if="page" :is="pageComponent"></component>
--- 							<div v-else>Select a menu item</div>
--- 						</div>
--- 					</div>
--- 				</div>
--- 			</div>
--- 		</section>
--- 	</div>
--- </template>
+---- MODEL ----
+
+
+type alias Model =
+    { common : Common
+    , tab : Maybe AdminTab
+    }
+
+
+init : Common -> Maybe AdminTab -> ( Model, Cmd Msg )
+init common tab =
+    ( { common = common, tab = tab }, Cmd.none )
+
+
+
+---- UPDATE ----
+
+
+type Msg
+    = SelectTab AdminTab
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        SelectTab tab ->
+            ( { model | tab = Just tab }, Route.replaceUrl model.common.key <| Route.Admin (Just tab) )
+
+
+
+---- DATA ----
+
+
+allTabs : List AdminTab
+allTabs =
+    [ AdminCreateEvent
+    , AdminGigRequest
+    , AdminMakeAnnouncement
+    , AdminAnnouncements
+    , AdminAbsenceRequests
+    , AdminEditSemester
+    , AdminOfficerPositions
+    , AdminSitePermissions
+    , AdminUniforms
+    , AdminDues
+    , AdminDocumentLinks
+    ]
+
+
+tabText : AdminTab -> String
+tabText tab =
+    case tab of
+        AdminCreateEvent ->
+            "Create Event"
+
+        AdminGigRequest ->
+            "Gig Requests"
+
+        AdminMakeAnnouncement ->
+            "Make Announcement"
+
+        AdminAnnouncements ->
+            "All Announcements"
+
+        AdminAbsenceRequests ->
+            "Absence Requests"
+
+        AdminEditSemester ->
+            "Edit Semester"
+
+        AdminOfficerPositions ->
+            "Officer Positions"
+
+        AdminSitePermissions ->
+            "Site Permissions"
+
+        AdminUniforms ->
+            "Uniforms"
+
+        AdminDues ->
+            "Dues"
+
+        AdminDocumentLinks ->
+            "Document Links"
+
+
+
+---- VIEW ----
+
+
+view : Model -> Html Msg
+view model =
+    div []
+        [ section [ class "section" ]
+            [ div [ class "container" ]
+                [ div [ class "columns" ]
+                    [ pageList, currentTab model.tab ]
+                ]
+            ]
+        ]
 
 
 pageList : Html Msg
 pageList =
     let
-        pageLink route name =
-            li [ Route.href route ] [ text name ]
-
-        links =
-            [ Route.Admin Just
-            ]
+        tabRowWithLink : AdminTab -> Html Msg
+        tabRowWithLink tab =
+            li [ onClick <| SelectTab tab ] [ text <| tabText tab ]
     in
-    ul [ class "menu-list" ]
-        []
+    div [ class "column is-narrow" ]
+        [ aside [ class "menu" ]
+            [ div [ class "box" ]
+                [ ul [ class "menu-list" ] (allTabs |> List.map tabRowWithLink) ]
+            ]
+        ]
 
 
+currentTab : Maybe AdminTab -> Html Msg
+currentTab maybeTab =
+    let
+        content =
+            case maybeTab of
+                Just tab ->
+                    text <| tabText tab
 
--- <script>
--- import common from "@/common"
--- import createEvent from "@/components/officer/create-event"
--- import gigRequests from "@/components/officer/gig-requests"
--- import makeAnnouncement from "@/components/officer/make-announcement"
--- import absenceRequests from "@/components/officer/absence-requests"
--- import editSemester from "@/components/officer/edit-semester"
--- import officers from "@/components/officer/officers"
--- import permissions from "@/components/officer/permissions"
--- import uniforms from "@/components/officer/uniforms"
--- import dues from "@/components/officer/dues"
--- import documentLinks from "@/components/officer/document-links"
--- export default {
--- 	name: "events",
--- 	props: ["page"],
--- 	components: {
--- 		createEvent,
--- 		gigRequests,
--- 		makeAnnouncement,
--- 		absenceRequests,
--- 		editSemester,
--- 		officers,
--- 		permissions,
--- 		uniforms,
--- 		dues,
--- 		documentLinks
--- 	},
--- 	data() {
--- 		return {
--- 			common: common
--- 		}
--- 	},
--- 	computed: {
--- 		pageComponent() {
--- 			return common.kebabToCamel(this.page)
--- 		}
--- 	}
--- }
--- </script>
+                Nothing ->
+                    text "Select a menu item"
+    in
+    div [ class "column" ]
+        [ div [ class "box" ]
+            [ div [] [ content ] ]
+        ]

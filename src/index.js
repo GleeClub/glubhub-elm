@@ -1,14 +1,15 @@
-import "./main.css";
+import "../css/bulma.css";
+import "../css/style.css";
+import "../css/bulma-extensions.min.css";
 import { Elm } from "./Main.elm";
 import * as serviceWorker from "./serviceWorker";
 
 const tokenName = "grease-token";
 
 var storedState = localStorage.getItem(tokenName);
-var startingState = storedState ? JSON.parse(storedState) : null;
 var app = Elm.Main.init({
-  flags: startingState,
-  node: document.getElementById("root"),
+  flags: storedState,
+  node: document.getElementById("root")
 });
 
 app.ports.setToken.subscribe(function(token) {
@@ -24,7 +25,7 @@ app.ports.alert.subscribe(function(alertMessage) {
 app.ports.scrollToElement.subscribe(function(elementId) {
   const element = document.getElementById(elementId);
   if (element) {
-    element.scrollIntoView();
+    element.scrollIntoView({ behavior: "smooth" });
   }
 });
 

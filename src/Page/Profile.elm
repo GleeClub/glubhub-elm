@@ -6,7 +6,7 @@ import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
 import Maybe.Extra exposing (isJust)
-import Models.Member exposing (Member, memberDecoder)
+import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
 import Utils exposing (Common, RemoteData(..), formatPhone, getRequest, setToken, spinner)
 
@@ -73,7 +73,7 @@ view model =
                     spinner
 
                 Loaded member ->
-                    viewProfile member (member.email == model.common.user.email)
+                    viewProfile member (model.common.user |> Maybe.map (\u -> u.email == member.email) |> Maybe.withDefault False)
 
                 Failure ->
                     text "Whoops..."

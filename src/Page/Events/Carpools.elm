@@ -1,10 +1,12 @@
-module Page.Events.Carpools exposing (viewCarpoolRow, viewCarpoolsList, viewEventCarpools)
+module Page.Events.Carpools exposing (Model, Msg(..), init, loadCarpools, update, view, viewCarpoolRow, viewCarpoolsList)
 
 import Html exposing (Html, b, br, div, li, text, ul)
+import Html.Attributes exposing (id)
+import Http
+import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
-import Page.Events exposing (Msg)
 import Route exposing (Route)
-import Utils exposing (RemoteData(..), spinner)
+import Utils exposing (Common, RemoteData(..), getRequest, spinner)
 
 
 
@@ -56,12 +58,12 @@ loadCarpools common eventId =
 ---- VIEW ----
 
 
-viewEventCarpools : RemoteData (List EventCarpool) -> Html Msg
-viewEventCarpools carpools =
+view : Model -> Html Msg
+view model =
     let
         content =
-            case carpools of
-                NotRequestedYet ->
+            case model.carpools of
+                NotAsked ->
                     text ""
 
                 Loading ->
@@ -70,8 +72,8 @@ viewEventCarpools carpools =
                 Loaded carpools ->
                     viewCarpoolsList carpools
 
-                Error err ->
-                    viewError err
+                Failure ->
+                    text "whoops"
     in
     div [ id "carpools" ] [ content ]
 
@@ -82,25 +84,28 @@ viewCarpoolsList carpools =
         div [] [ text "No carpools set for this event." ]
 
     else
-        ul [] List.map viewCarpoolRow carpools
+        ul [] <| List.map viewCarpoolRow carpools
 
 
 viewCarpoolRow : EventCarpool -> Html Msg
 viewCarpoolRow carpool =
     let
+        passengers =
+            carpool.passengers |> List.filter (\p -> p.email /= carpool.driver.email)
+
         passengerItem passenger =
-            li [] [ text <| carpool.passenger.fullName ]
+            li [] [ text <| passenger.fullName ]
 
         passengerBlock =
-            if List.length carpool.passengers == 0 then
+            if List.length passengers == 0 then
                 b [] [ text "themself", br [] [] ]
 
             else
-                ul [] List.map passengerItem carpool.passengers
+                ul [] <| List.map passengerItem passengers
     in
-    li [ key <| carpool.id ]
+    li []
         [ b [] [ text carpool.driver.fullName ]
-        , text "is driving"
+        , text " is driving "
         , passengerBlock
         , br [] []
         ]

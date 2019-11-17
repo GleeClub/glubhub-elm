@@ -2,19 +2,19 @@ module Page.Minutes exposing (Model, Msg(..), editMinutes, init, loadAllMinutes,
 
 import Browser.Navigation as Nav
 import Components.SelectableList exposing (SelectableListData, selectableList)
-import Html exposing (Html, a, button, div, form, h1, img, input, label, section, span, text)
-import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
+import Html exposing (Html, a, button, div, form, h1, img, input, label, li, p, section, span, td, text, ul)
+import Html.Attributes exposing (class, href, id, placeholder, property, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (find)
 import MD5
-import Markdown exposing (Markdown)
 import Maybe.Extra exposing (filter, isJust)
 import Models.Document exposing (MeetingMinutes, meetingMinutesDecoder)
-import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), getRequest, notFoundView, permittedTo, setToken, spinner)
+import Models.Event exposing (Member)
+import Route exposing (MinutesRoute, MinutesTab(..), Route)
+import Utils exposing (Common, RemoteData(..), getRequest, notFoundView, permittedTo, rawHtml, setToken, spinner)
 
 
 
@@ -29,19 +29,19 @@ type alias Model =
     }
 
 
-init : Common -> Maybe Int -> ( Model, Cmd Msg )
-init common selected =
+init : Common -> MinutesRoute -> ( Model, Cmd Msg )
+init common route =
     let
-        ( tab, selectedMinutes, loadSingleMinutes ) =
-            case selected of
+        ( tab, selectedMinutes, toLoadSingleMinutes ) =
+            case route.id of
                 Just selectedId ->
-                    ( Just Public, Loading, [ loadSingleMinutes common ] )
+                    ( route.tab, Loading, [ loadSingleMinutes common selectedId ] )
 
                 Nothing ->
                     ( Nothing, NotAsked, [] )
 
         commands =
-            [ loadAllMinutes common ] ++ loadSingleMinutes
+            [ loadAllMinutes common ] ++ toLoadSingleMinutes
     in
     ( { common = common
       , minutes = Loading
@@ -71,23 +71,22 @@ type Msg
     | OnLoadSingleMinutes (Result Http.Error MeetingMinutes)
     | SelectMinutes Int
     | SelectTab MinutesTab
-    | UpdateUrl
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         OnLoadAllMinutes (Ok minutes) ->
-            ( { model | minutes = Loaded minutes }, Cmd.none )
+            ( { model | minutes = Loaded (List.reverse minutes) }, Cmd.none )
 
         OnLoadAllMinutes (Err _) ->
             ( { model | minutes = Failure }, Cmd.none )
 
         OnLoadSingleMinutes (Ok minutes) ->
-            ( { model | minutes = Loaded minutes }, UpdateUrl )
+            updateUrl { model | selected = Loaded minutes }
 
         OnLoadSingleMinutes (Err _) ->
-            ( { model | minutes = Failure }, UpdateUrl )
+            updateUrl { model | selected = Failure }
 
         SelectMinutes selected ->
             let
@@ -106,28 +105,33 @@ update msg model =
                 ( { model | selected = Loading }, loadSingleMinutes model.common selected )
 
         SelectTab tab ->
-            ( { model | tab = Just tab }, UpdateUrl )
-
-        UpdateUrl ->
-            let
-                minutesId =
-                    case model.selected of
-                        Loaded minutes ->
-                            Just minutes.id
-
-                        _ ->
-                            Nothing
-            in
-            ( model, Route.replaceUrl common.key Route.Minutes { id = minutesId, tab = model.tab } )
+            updateUrl { model | tab = Just tab }
 
 
 
 ---- DATA ----
 
 
+updateUrl : Model -> ( Model, Cmd Msg )
+updateUrl model =
+    let
+        minutesId =
+            case model.selected of
+                Loaded minutes ->
+                    Just minutes.id
+
+                _ ->
+                    Nothing
+
+        route =
+            Route.Minutes { id = minutesId, tab = model.tab }
+    in
+    ( model, Route.replaceUrl model.common.key route )
+
+
 loadAllMinutes : Common -> Cmd Msg
 loadAllMinutes common =
-    getRequest common "/meeting_minutes" (Http.expectJson <| Decode.list meetingMinutesDecoder)
+    getRequest common "/meeting_minutes" (Http.expectJson OnLoadAllMinutes <| Decode.list meetingMinutesDecoder)
 
 
 loadSingleMinutes : Common -> Int -> Cmd Msg
@@ -136,7 +140,7 @@ loadSingleMinutes common minutesId =
         url =
             "/meeting_minutes/" ++ String.fromInt minutesId
     in
-    getRequest common url (Http.expectJson meetingMinutesDecoder)
+    getRequest common url (Http.expectJson OnLoadSingleMinutes meetingMinutesDecoder)
 
 
 
@@ -146,6 +150,7 @@ loadSingleMinutes common minutesId =
 view : Model -> Html Msg
 view model =
     let
+        isSelected : MeetingMinutes -> Bool
         isSelected minutes =
             case model.selected of
                 Loaded selected ->
@@ -157,9 +162,9 @@ view model =
         minutesList =
             selectableList
                 { listItems = model.minutes
+                , render = \minutes -> [ td [] [ text minutes.name ] ]
                 , isSelected = isSelected
                 , onSelect = \minutes -> SelectMinutes minutes.id
-                , render = \minutes -> text minutes.name
                 , messageIfEmpty = "No minutes"
                 }
     in
@@ -179,91 +184,104 @@ view model =
 viewSelectedMinutes : Model -> Html Msg
 viewSelectedMinutes model =
     let
-        selectedMinutes =
-            case ( model.minutes, model.selected ) of
-                ( Loaded minutes, Just selectedId ) ->
-                    minutes |> find (\m -> m.id == selectedId)
+        content =
+            case model.selected of
+                NotAsked ->
+                    [ p [] [ text "Select minutes" ] ]
 
-                ( _, _ ) ->
-                    Nothing
-
-        loaded =
-            case model.minutes of
                 Loading ->
-                    False
+                    [ spinner ]
 
-                _ ->
-                    True
+                Loaded minutes ->
+                    [ viewTabs model.common.user model.tab minutes.id ]
+                        ++ viewTabBlock minutes (model.tab |> Maybe.withDefault Public) model.common.user
+
+                Failure ->
+                    [ text "Whoops" ]
     in
-    case meetingMinutes of
-        Nothing ->
-            div [ class "box" ]
-                [ p [] [ text "Select minutes" ] ]
-
-        Just minutes ->
-            div [ class "box" ]
-                [ viewTabs, viewTabBlock minutes ]
+    div [ class "box" ] content
 
 
-viewTabs : Member -> Maybe MinutesTab -> Html Msg
-viewTabs user selectedTab =
+viewTabs : Maybe Member -> Maybe MinutesTab -> Int -> Html Msg
+viewTabs user selectedTab minutesId =
     let
+        canViewCompleteMinutes =
+            user |> Maybe.map (permittedTo viewCompleteMinutes) |> Maybe.withDefault False
+
+        canEditMinutes =
+            user |> Maybe.map (permittedTo editMinutes) |> Maybe.withDefault False
+
         tabs =
             List.concat <|
-                [ [ viewTab Public "Redacted" selectedTab ]
-                , if user |> permittedTo viewCompleteMinutes then
-                    [ viewTab Private "Complete" selectedTab ]
+                [ [ viewTab Public selectedTab minutesId ]
+                , if canViewCompleteMinutes then
+                    [ viewTab Private selectedTab minutesId ]
 
                   else
                     []
-                , if user |> permittedTo editMinutes then
-                    [ viewTab Edit "Edit" selectedTab ]
+                , if canEditMinutes then
+                    [ viewTab Edit selectedTab minutesId ]
 
                   else
                     []
                 ]
     in
-    if (user |> permittedTo viewCompleteMinutes) or (user |> permittedTo editMinutes) then
+    if canViewCompleteMinutes || canEditMinutes then
         div [ class "tabs" ] [ ul [] tabs ]
 
     else
         div [ style "display" "none" ] []
 
 
-viewTab : MinutesTab -> String -> Maybe MinutesTab -> Html Msg
-viewTab tab name selectedTab =
+tabName : MinutesTab -> String
+tabName tab =
+    case tab of
+        Public ->
+            "Redacted"
+
+        Private ->
+            "Complete"
+
+        Edit ->
+            "Edit"
+
+
+viewTab : MinutesTab -> Maybe MinutesTab -> Int -> Html Msg
+viewTab tab selectedTab minutesId =
     let
         isSelected =
             selectedTab |> filter (\t -> t == tab) |> isJust
     in
-    li
-        [ class <|
-            if isSelected then
-                "is-active"
+    li []
+        [ a
+            [ onClick <| SelectTab tab
+            , class <|
+                if isSelected then
+                    " is-active"
 
-            else
-                ""
-        , onClick <| SelectMinutes tab
+                else
+                    ""
+            ]
+            [ text <| tabName tab ]
         ]
-        [ text name ]
 
 
-viewTabBlock : MeetingMinutes -> MinutesTab -> Member -> Html Msg
+viewTabBlock : MeetingMinutes -> MinutesTab -> Maybe Member -> List (Html Msg)
 viewTabBlock minutes tab user =
     case tab of
         Public ->
-            Markdown.toHtml [] (minutes.public |> Maybe.withDefault "")
+            minutes.public |> Maybe.withDefault "" |> rawHtml
 
         Private ->
-            if user |> permittedTo viewCompleteMinutes then
-                Markdown.toHtml [] (minutes.public |> Maybe.withDefault "")
+            if user |> Maybe.map (permittedTo viewCompleteMinutes) |> Maybe.withDefault False then
+                minutes.private |> Maybe.withDefault "" |> rawHtml
 
             else
-                text "Slow down, cowboy! Who said you could see these here documents?"
+                [ text "Slow down, cowboy! Who said you could see these here documents?" ]
 
         Edit ->
-            if user |> permittedTo editMinutes then
-                text "Edit minutes"
+            if user |> Maybe.map (permittedTo editMinutes) |> Maybe.withDefault False then
+                [ text "Edit minutes" ]
 
             else
-                text "Slow down, cowboy! Who said you could edit these here documents?"
+                [ text "Slow down, cowboy! Who said you could edit these here documents?" ]

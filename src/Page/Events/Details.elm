@@ -1,37 +1,180 @@
-module Page.Events.Details exposing (attendance, rsvpActions, uniform, viewEventDetails)
+module Page.Events.Details exposing (Model, Msg(..), attendance, init, loadEvent, onRsvp, rsvp, rsvpActions, uniform, update, view, viewEventDetails)
 
-import Html exposing (Html, a, div, h1, img, section, table, tbody, td, text, thead, tr)
-import Html.Attributes exposing (class, href, id, src)
+import Html exposing (Html, a, b, br, div, h1, i, img, p, section, span, table, tbody, td, text, thead, tr)
+import Html.Attributes exposing (attribute, class, href, id, src, style)
+import Html.Events exposing (onClick)
+import Http
+import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Maybe.Extra
-import Models.Event exposing (FullEvent)
-import Page.Events exposing (Model, Msg)
-import Time exposing (Posix)
+import Models.Event exposing (FullEvent, FullEventAttendance, fullEventDecoder)
+import Models.Info exposing (Uniform)
+import Route exposing (Route)
+import Task
+import Time exposing (Posix, posixToMillis)
+import Utils exposing (Common, RemoteData(..), eventIsOver, fullDateTimeFormatter, getRequest, spinner, timeFormatter)
 
 
-viewEventDetails : Model -> FullEvent -> Html Msg
-viewEventDetails model event =
+
+---- MODEL ----
+
+
+type alias Model =
+    { event : RemoteData FullEvent
+    , confirmedAttendance : Bool
+    , common : Common
+    }
+
+
+init : Common -> Int -> ( Model, Cmd Msg )
+init common eventId =
+    ( { event = Loading, confirmedAttendance = False, common = common }, loadEvent common eventId )
+
+
+
+---- UPDATE ----
+
+
+type Msg
+    = OnLoadEvent (Result Http.Error FullEvent)
+    | Rsvp Bool
+    | OnRsvp (Result Http.Error Bool)
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        OnLoadEvent (Ok event) ->
+            ( { model | event = Loaded event }, Cmd.none )
+
+        OnLoadEvent (Err _) ->
+            ( { model | event = Failure }, Cmd.none )
+
+        Rsvp attending ->
+            let
+                cmd =
+                    case model.event of
+                        Loaded event ->
+                            rsvp model.common event.id attending
+
+                        _ ->
+                            Cmd.none
+            in
+            ( model, cmd )
+
+        OnRsvp requestResult ->
+            ( model |> onRsvp requestResult, Cmd.none )
+
+
+
+---- DATA ----
+
+
+loadEvent : Common -> Int -> Cmd Msg
+loadEvent common eventId =
+    let
+        url =
+            "/events/" ++ String.fromInt eventId
+    in
+    getRequest common url (Http.expectJson OnLoadEvent fullEventDecoder)
+
+
+rsvp : Common -> Int -> Bool -> Cmd Msg
+rsvp common eventId attending =
+    let
+        url =
+            "/events/"
+                ++ String.fromInt eventId
+                ++ "/rsvp/"
+                ++ (if attending then
+                        "true"
+
+                    else
+                        "false"
+                   )
+    in
+    getRequest common url (Http.expectJson OnRsvp (Decode.succeed attending))
+
+
+onRsvp : Result Http.Error Bool -> Model -> Model
+onRsvp requestResult model =
+    let
+        ( updatedEvent, confirmedAttendance ) =
+            case ( requestResult, model.event ) of
+                ( Ok attending, Loaded event ) ->
+                    case event.attendance of
+                        Just eventAttendance ->
+                            ( Loaded { event | attendance = Just { eventAttendance | confirmed = attending } }, True )
+
+                        Nothing ->
+                            ( Loaded event, True )
+
+                ( Err _, event ) ->
+                    ( event, False )
+
+                ( _, event ) ->
+                    ( event, True )
+    in
+    { model | event = updatedEvent, confirmedAttendance = confirmedAttendance }
+
+
+
+---- VIEW ----
+
+
+view : Model -> Html Msg
+view model =
+    case model.event of
+        NotAsked ->
+            text ""
+
+        Loading ->
+            spinner
+
+        Loaded event ->
+            viewEventDetails model.common model.confirmedAttendance event
+
+        Failure ->
+            text "whoops"
+
+
+viewEventDetails : Common -> Bool -> FullEvent -> Html Msg
+viewEventDetails common confirmedAttendance event =
     let
         title =
             h1 [ class "title is-3" ] [ text event.name ]
 
         subtitle =
-            p [ class "subtitle is-5" ]
-                [ text <| formatCallTime event.callTime, br, text event.location ]
+            p [ class "subtitle is-5" ] <|
+                [ text
+                    (event.callTime
+                        |> fullDateTimeFormatter
+                            common.timeZone
+                    )
+                , br [] []
+                ]
+                    ++ (event.location
+                            |> Maybe.map (\l -> [ text l ])
+                            |> Maybe.withDefault []
+                       )
 
-        comments =
+        maybeComments =
             event.comments
                 |> Maybe.map
                     (\comments ->
-                        [ p [] [ text comments, br, br ] ]
+                        [ p [] [ text comments, br [] [], br [] [] ] ]
                     )
 
         performAt =
-            event.performanceTime
+            event.gig
+                |> Maybe.map .performanceTime
                 |> Maybe.map
                     (\performanceTime ->
                         [ p []
                             [ text "Perform at: "
-                            , text <| formatPerformanceTime performanceTime
+                            , text <|
+                                timeFormatter
+                                    common.timeZone
+                                    performanceTime
                             ]
                         ]
                     )
@@ -39,14 +182,14 @@ viewEventDetails model event =
         points =
             p []
                 [ text "This event is worth "
-                , b [] [ text <| toString event.points, text " points" ]
+                , b [] [ text <| String.fromInt event.points, text " points" ]
                 ]
 
-        section =
+        maybeSection =
             event.section
                 |> Maybe.map
                     (\section ->
-                        [ p [] [ text "This event is for the " ++ section ++ " section" ] ]
+                        [ p [] [ text <| "This event is for the " ++ section ++ " section" ] ]
                     )
 
         rsvpIssue issue =
@@ -55,45 +198,62 @@ viewEventDetails model event =
         requestAbsence =
             -- TODO: why do we need rsvpIssue
             event.rsvpIssue
-                |> Maybe.Extra.filter (Posix.now < event.releaseTime)
+                |> Maybe.Extra.filter
+                    (\_ ->
+                        not <|
+                            eventIsOver
+                                common.now
+                                event
+                    )
                 |> Maybe.map
                     (\_ ->
                         a
                             [ class "button is-primary is-outlined"
-                            , Route.href Route.Event Route.EventTab.TabAbsenceRequest
+                            , Route.href <| Route.Events { id = Just event.id, tab = Just Route.EventRequestAbsence }
                             ]
                             [ text "Request Absence" ]
                     )
 
         attendanceBlock =
-            div []
-                [ if Posix.Now < event.releaseTime then
-                    span [] <|
-                        case event.rsvpIssue of
-                            Just issue ->
-                                rsvpIssue issue
+            let
+                content =
+                    case
+                        ( event.attendance
+                        , event.rsvpIssue
+                        , eventIsOver
+                            common.now
+                            event
+                        )
+                    of
+                        ( Just eventAttendance, _, True ) ->
+                            [ span [] <| attendance eventAttendance ]
 
-                            Nothing ->
-                                rsvpActions event
+                        ( _, Just issue, False ) ->
+                            [ span [] <| rsvpIssue issue ]
 
-                  else
-                    attendance event
-                ]
+                        ( Just eventAttendance, Nothing, False ) ->
+                            [ span [] <| rsvpActions eventAttendance ]
+
+                        ( Nothing, _, _ ) ->
+                            []
+            in
+            div [] content
     in
-    div [] List.concat <|
-        [ [ title, subtitle ]
-        , Maybe.withDefault [] comments
-        , [ attendanceBlock ]
-        , Maybe.withDefault [] performAt
-        , [ points ]
-        , Maybe.withDefault [] section
-        , Maybe.withDefault [] <| uniform event.uniform
-        ]
+    div [] <|
+        List.concat
+            [ [ title, subtitle ]
+            , Maybe.withDefault [] maybeComments
+            , [ attendanceBlock ]
+            , Maybe.withDefault [] performAt
+            , [ points ]
+            , maybeSection |> Maybe.withDefault []
+            , event.gig |> Maybe.map .uniform |> Maybe.map uniform |> Maybe.withDefault []
+            ]
 
 
-rsvpActions : FullEvent -> Html Msg
-rsvpActions event =
-    case ( event.confirmed, event.shouldAttend ) of
+rsvpActions : FullEventAttendance -> List (Html Msg)
+rsvpActions eventAttendance =
+    case ( eventAttendance.confirmed, eventAttendance.shouldAttend ) of
         ( True, True ) ->
             [ p []
                 [ text "You're "
@@ -101,7 +261,7 @@ rsvpActions event =
                 , text " to be "
                 , b [] [ text "attending" ]
                 ]
-            , a [ class "button is-primary is-outlined", onClick <| \_ -> RsvpToEvent event False ]
+            , a [ class "button is-primary is-outlined", onClick <| Rsvp False ]
                 [ text "oops jk, gotta dip" ]
             ]
 
@@ -112,23 +272,23 @@ rsvpActions event =
 
         ( False, True ) ->
             [ p [] [ text "You're coming, right?" ]
-            , a [ class "button is-primary is-outlined", onClick <| \_ -> RsvpToEvent event False ]
+            , a [ class "button is-primary is-outlined", onClick <| Rsvp False ]
                 [ text "sorry fam, not this time" ]
-            , a [ class "button is-primary", onClick <| \_ -> RsvpToEvent event True ]
+            , a [ class "button is-primary", onClick <| Rsvp True ]
                 [ text "yep, I'll be there" ]
             ]
 
         ( False, False ) ->
             [ p [] [ text "You're not coming, right?" ]
-            , a [ class "button is-primary is-outlined", onClick <| \_ -> RsvpToEvent event False ]
+            , a [ class "button is-primary is-outlined", onClick <| Rsvp False ]
                 [ text "akshually I can come. you're welcome" ]
             , a [ class "button is-primary" ] [ text "nah, I'm gonna miss it" ]
             ]
 
 
-attendance : FullEvent -> Html Msg
-attendance event =
-    case ( event.didAttend, event.shouldAttend ) of
+attendance : FullEventAttendance -> List (Html Msg)
+attendance eventAttendance =
+    case ( eventAttendance.didAttend, eventAttendance.shouldAttend ) of
         ( True, True ) ->
             [ text "You were there! What a great time. Real #tbt material." ]
 
@@ -141,7 +301,7 @@ attendance event =
             , text ", and that's "
             , b [] [ text "not ok" ]
             , text ". You lost "
-            , text <| toString event.points
+            , text <| String.fromFloat <| abs eventAttendance.gradeChange
             , text " points. "
             , a [ href "mailto:gleeclub_officers@lists.gatech.edu?subject=Attendance%20Issue" ]
                 [ text "Email the officers" ]
@@ -150,27 +310,23 @@ attendance event =
 
         ( False, False ) ->
             [ text "You "
-            , b [] [ "weren't there" ]
+            , b [] [ text "weren't there" ]
             , text ", but that's "
             , b [] [ text "ok" ]
             , text "."
             ]
 
 
-uniform : Maybe Uniform -> Html Msg
+uniform : Uniform -> List (Html Msg)
 uniform eventUniform =
-    eventUniform
-        |> Maybe.map
-            (\uniform ->
-                [ p []
-                    [ span [] [ text uniform.name ]
-                    , span
-                        [ style "cursor" "pointer"
-                        , class "icon tooltip is-tooltip-multiline has-text-grey-light is-small"
-                        , data - tooltip uniform.description
-                        ]
-                        [ i [ class "far fa-question-circle" ] [] ]
-                    , br
-                    ]
-                ]
-            )
+    [ p []
+        [ span [] [ text eventUniform.name ]
+        , span
+            [ style "cursor" "pointer"
+            , class "icon tooltip is-tooltip-multiline has-text-grey-light is-small"
+            , attribute "data-tooltip" (eventUniform.description |> Maybe.withDefault "")
+            ]
+            [ i [ class "far fa-question-circle" ] [] ]
+        , br [] []
+        ]
+    ]

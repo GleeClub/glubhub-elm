@@ -1,13 +1,15 @@
-module Models.Info exposing (Enrollment(..), EventType, Info, MediaType, Permission, PermissionType(..), Role, Semester, StorageType(..), Uniform, enrollmentDecoder, eventTypeDecoder, infoDecoder, mediaTypeDecoder, permissionDecoder, permissionTypeDecoder, posixDecoder, roleDecoder, semesterDecoder, storageTypeDecoder, uniformDecoder)
+module Models.Info exposing (Enrollment(..), EventType, Info, MediaType, Permission, PermissionType(..), Role, Semester, StorageType(..), Uniform, emptyInfo, emptySemester, enrollmentDecoder, enrollmentToString, eventTypeDecoder, infoDecoder, mediaTypeDecoder, permissionDecoder, permissionTypeDecoder, posixDecoder, roleDecoder, semesterDecoder, storageTypeDecoder, uniformDecoder)
 
-import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
+import Iso8601
+import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string, succeed)
 import Json.Decode.Pipeline exposing (custom, optional, required)
-import Time exposing (Posix)
+import Time exposing (Posix, millisToPosix)
 
 
 posixDecoder : Decoder Posix
 posixDecoder =
-    int |> Decode.andThen (\i -> Decode.succeed <| Time.millisToPosix i)
+    -- int |> Decode.andThen (\i -> Decode.succeed <| Time.millisToPosix i)
+    Iso8601.decoder
 
 
 type alias Info =
@@ -25,12 +27,24 @@ infoDecoder : Decoder Info
 infoDecoder =
     Decode.succeed Info
         |> required "eventTypes" (Decode.list eventTypeDecoder)
-        |> required "mediaType" (Decode.list mediaTypeDecoder)
+        |> required "mediaTypes" (Decode.list mediaTypeDecoder)
         |> required "permissions" (Decode.list permissionDecoder)
         |> required "roles" (Decode.list roleDecoder)
         |> required "sections" (Decode.list string)
         |> required "transactionTypes" (Decode.list string)
         |> required "uniforms" (Decode.list uniformDecoder)
+
+
+emptyInfo : Info
+emptyInfo =
+    { eventTypes = []
+    , mediaTypes = []
+    , permissions = []
+    , roles = []
+    , sections = []
+    , transactionTypes = []
+    , uniforms = []
+    }
 
 
 type Enrollment
@@ -62,6 +76,16 @@ enrollmentDecoder =
                     other ->
                         Decode.fail "Enrollments can only be \"class\", \"club\", \"inactive\", or null"
             )
+
+
+enrollmentToString : Enrollment -> String
+enrollmentToString enrollment =
+    case enrollment of
+        Class ->
+            "class"
+
+        Club ->
+            "club"
 
 
 type alias MediaType =
@@ -200,3 +224,13 @@ semesterDecoder =
         |> required "endDate" posixDecoder
         |> required "gigRequirement" int
         |> required "current" bool
+
+
+emptySemester : Semester
+emptySemester =
+    { name = ""
+    , startDate = millisToPosix 0
+    , endDate = millisToPosix 0
+    , gigRequirement = 5
+    , current = True
+    }
