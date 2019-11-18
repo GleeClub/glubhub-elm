@@ -18,6 +18,7 @@ type Route
     | Profile String
     | EditProfile
     | Events EventRoute
+    | EditCarpools Int
     | Repertoire (Maybe Int)
     | Minutes MinutesRoute
     | ForgotPassword
@@ -224,10 +225,11 @@ parser =
         , Parser.map (Events { id = Nothing, tab = Nothing }) (s "events")
         , Parser.map (\id -> Events { id = Just id, tab = Nothing }) (s "events" </> int)
         , Parser.map (\id tab -> Events { id = Just id, tab = Just tab }) (s "events" </> int </> custom "eventTab" eventTabParser)
+        , Parser.map EditCarpools (s "events" </> int </> s "edit-carpools")
 
         -- /repertoire and /repertoire/{id}
         , Parser.map (Repertoire Nothing) (s "repertoire")
-        , Parser.map (\id -> Repertoire (Just id)) (s "repertoire" </> int)
+        , Parser.map (\id -> Repertoire <| Just id) (s "repertoire" </> int)
 
         -- /minutes, /minutes/{id}, and /minutes/{id}/{tab}
         , Parser.map (Minutes { id = Nothing, tab = Nothing }) (s "minutes")
@@ -300,6 +302,9 @@ routeToString page =
 
                         ( Just id, Just tab ) ->
                             [ "events", String.fromInt id, eventTabString tab ]
+
+                EditCarpools eventId ->
+                    [ "events", String.fromInt eventId, "edit-carpools" ]
 
                 Repertoire songId ->
                     case songId of

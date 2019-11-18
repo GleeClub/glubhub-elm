@@ -1,10 +1,12 @@
-module Page.Profile exposing (Model, Msg(..), init, loadMember, update, view, viewProfile)
+module Page.Profile exposing (Model, Msg(..), init, update, view)
 
+import Components.Basics as Basics
 import Html exposing (Html, a, br, button, div, img, section, text)
 import Html.Attributes exposing (class, href, id, src, type_)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
+import List.Extra
 import Maybe.Extra exposing (isJust)
 import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
@@ -23,7 +25,12 @@ type alias Model =
 
 init : Common -> String -> ( Model, Cmd Msg )
 init common email =
-    ( { common = common, member = Loading }, loadMember common email )
+    case common.members |> List.Extra.find (\member -> member.email == email) of
+        Just member ->
+            ( { common = common, member = Loaded member }, Cmd.none )
+
+        Nothing ->
+            ( { common = common, member = Loading }, loadMember common email )
 
 
 
@@ -104,11 +111,9 @@ viewProfile member isCurrentUser =
                 "No car"
 
         arrivedAtTech =
-            "Arrived at tech "
-                ++ (member.arrivedAtTech
-                        |> Maybe.map (\arrived -> "Arrived at tech in " ++ String.fromInt arrived)
-                        |> Maybe.withDefault "Came in the summer of '69"
-                   )
+            member.arrivedAtTech
+                |> Maybe.map (\arrived -> "Arrived at tech in " ++ String.fromInt arrived)
+                |> Maybe.withDefault "Came to Tech in the summer of '69"
 
         rows =
             [ text member.fullName
@@ -127,8 +132,8 @@ viewProfile member isCurrentUser =
         currentUserActions =
             if isCurrentUser then
                 [ div []
-                    [ button [ type_ "button", class "button", onClick Logout ] [ text "Log Out" ]
-                    , button [ type_ "button", class "button", Route.href Route.Login ] [ text "Edit" ]
+                    [ a [ class "button", onClick Logout ] [ text "Log Out" ]
+                    , Basics.linkButton "Edit" Route.EditProfile
                     ]
                 ]
 

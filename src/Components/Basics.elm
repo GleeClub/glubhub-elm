@@ -55,7 +55,7 @@ checkOrCross isCheck =
 
 linkButton : String -> Route -> Html msg
 linkButton content route =
-    button [ type_ "button", class "button", Route.href route ] [ text content ]
+    a [ class "button", Route.href route ] [ text content ]
 
 
 type alias HorizontalField msg =

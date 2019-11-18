@@ -1,17 +1,16 @@
-module Page.Events.Attendees exposing (Model, Msg(..), init, loadAttendees, organizeAttendees, update, view, viewAttendeeSection, viewAttendeesTable)
+module Page.Events.Attendees exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
-import Html exposing (Html, a, b, button, div, form, h1, img, input, label, section, span, table, tbody, td, text, tr)
+import Components.Basics as Basics
+import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, section, span, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (class, colspan, href, id, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode exposing (field, string)
-import Json.Encode as Encode
 import List.Extra exposing (groupWhile)
-import MD5
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder, memberDecoder)
+import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, notFoundView, setToken, spinner)
+import Utils exposing (Common, RemoteData(..), getRequest, spinner)
 
 
 
@@ -85,6 +84,18 @@ organizeAttendees attendees =
         |> List.sortBy (\section -> Tuple.first section)
 
 
+separateAttendees : List EventAttendee -> ( ( List EventAttendee, List EventAttendee ), ( List EventAttendee, List EventAttendee ) )
+separateAttendees attendees =
+    let
+        ( attending, notAttending ) =
+            attendees |> List.partition (\attendee -> attendee.attendance.shouldAttend)
+
+        splitByConfirmed =
+            List.partition (\attendee -> attendee.attendance.confirmed)
+    in
+    ( splitByConfirmed attending, splitByConfirmed notAttending )
+
+
 
 ---- VIEW ----
 
@@ -101,7 +112,7 @@ view model =
                     spinner
 
                 Loaded attendees ->
-                    viewAttendeesTable attendees
+                    attendeeTables attendees
 
                 Failure ->
                     text "error"
@@ -109,54 +120,40 @@ view model =
     div [ id "attendees" ] [ content ]
 
 
-viewAttendeesTable : List EventAttendee -> Html Msg
-viewAttendeesTable attendees =
-    table [ class "table is-fullwidth" ]
-        (organizeAttendees attendees |> List.map viewAttendeeSection)
-
-
-viewAttendeeSection : ( String, List EventAttendee ) -> Html Msg
-viewAttendeeSection attendeeSection =
+attendeeTables : List EventAttendee -> Html Msg
+attendeeTables attendees =
     let
-        firstRow =
-            tr []
-                [ td [ colspan 3 ]
-                    [ b [] [ text <| Tuple.first attendeeSection ] ]
-                ]
-
-        attendeeClass attendance =
-            case ( attendance.shouldAttend, attendance.confirmed ) of
-                ( True, True ) ->
-                    "has-text-success"
-
-                ( True, False ) ->
-                    "has-text-grey-light"
-
-                ( False, False ) ->
-                    "is-italic has-text-grey-light"
-
-                ( False, True ) ->
-                    ""
-
-        attendeeRow attendee =
-            tr [ class <| attendeeClass attendee.attendance ]
-                [ td [ Route.href <| Route.Profile attendee.member.email ] [ text attendee.member.fullName ]
-                , td []
-                    [ text <|
-                        if attendee.attendance.shouldAttend then
-                            "attending"
-
-                        else
-                            "not attending"
-                    ]
-                , td []
-                    [ text <|
-                        if attendee.attendance.confirmed then
-                            "confirmed"
-
-                        else
-                            "unconfirmed"
-                    ]
-                ]
+        ( attending, notAttending ) =
+            separateAttendees attendees
     in
-    tbody [] <| [ firstRow ] ++ (Tuple.second attendeeSection |> List.map attendeeRow)
+    Basics.column
+        [ Basics.title "Attending"
+        , attendeeTable attending
+        , Basics.title "Not Attending"
+        , attendeeTable notAttending
+        ]
+
+
+attendeeTable : ( List EventAttendee, List EventAttendee ) -> Html Msg
+attendeeTable ( confirmed, notConfirmed ) =
+    table [ class "table is-fullwidth" ]
+        [ thead []
+            [ tr []
+                [ th [] [ text "Confirmed" ]
+                , th [] [ text "Not Confirmed" ]
+                ]
+            ]
+        , tbody []
+            [ tr []
+                [ td [ style "width" "50%" ] <| attendeeNameList confirmed
+                , td [ style "width" "50%" ] <| attendeeNameList notConfirmed
+                ]
+            ]
+        ]
+
+
+attendeeNameList : List EventAttendee -> List (Html Msg)
+attendeeNameList attendees =
+    attendees
+        |> List.map (\attendee -> text attendee.member.fullName)
+        |> List.intersperse (br [] [])

@@ -1,4 +1,4 @@
-module Page.Events.Details exposing (Model, Msg(..), attendance, init, loadEvent, onRsvp, rsvp, rsvpActions, uniform, update, view, viewEventDetails)
+module Page.Events.Details exposing (Model, Msg(..), init, update, view)
 
 import Html exposing (Html, a, b, br, div, h1, i, img, p, section, span, table, tbody, td, text, thead, tr)
 import Html.Attributes exposing (attribute, class, href, id, src, style)
@@ -19,15 +19,15 @@ import Utils exposing (Common, RemoteData(..), eventIsOver, fullDateTimeFormatte
 
 
 type alias Model =
-    { event : RemoteData FullEvent
+    { event : FullEvent
     , confirmedAttendance : Bool
     , common : Common
     }
 
 
-init : Common -> Int -> ( Model, Cmd Msg )
-init common eventId =
-    ( { event = Loading, confirmedAttendance = False, common = common }, loadEvent common eventId )
+init : Common -> FullEvent -> ( Model, Cmd Msg )
+init common event =
+    ( { event = event, confirmedAttendance = False, common = common }, Cmd.none )
 
 
 
@@ -35,31 +35,15 @@ init common eventId =
 
 
 type Msg
-    = OnLoadEvent (Result Http.Error FullEvent)
-    | Rsvp Bool
+    = Rsvp Bool
     | OnRsvp (Result Http.Error Bool)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadEvent (Ok event) ->
-            ( { model | event = Loaded event }, Cmd.none )
-
-        OnLoadEvent (Err _) ->
-            ( { model | event = Failure }, Cmd.none )
-
         Rsvp attending ->
-            let
-                cmd =
-                    case model.event of
-                        Loaded event ->
-                            rsvp model.common event.id attending
-
-                        _ ->
-                            Cmd.none
-            in
-            ( model, cmd )
+            ( model, rsvp model.common model.event.id attending )
 
         OnRsvp requestResult ->
             ( model |> onRsvp requestResult, Cmd.none )
@@ -67,15 +51,6 @@ update msg model =
 
 
 ---- DATA ----
-
-
-loadEvent : Common -> Int -> Cmd Msg
-loadEvent common eventId =
-    let
-        url =
-            "/events/" ++ String.fromInt eventId
-    in
-    getRequest common url (Http.expectJson OnLoadEvent fullEventDecoder)
 
 
 rsvp : Common -> Int -> Bool -> Cmd Msg
@@ -98,21 +73,21 @@ rsvp common eventId attending =
 onRsvp : Result Http.Error Bool -> Model -> Model
 onRsvp requestResult model =
     let
+        event =
+            model.event
+
         ( updatedEvent, confirmedAttendance ) =
-            case ( requestResult, model.event ) of
-                ( Ok attending, Loaded event ) ->
-                    case event.attendance of
+            case requestResult of
+                Ok attending ->
+                    case model.event.attendance of
                         Just eventAttendance ->
-                            ( Loaded { event | attendance = Just { eventAttendance | confirmed = attending } }, True )
+                            ( { event | attendance = Just { eventAttendance | confirmed = attending } }, True )
 
                         Nothing ->
-                            ( Loaded event, True )
+                            ( event, True )
 
-                ( Err _, event ) ->
+                Err _ ->
                     ( event, False )
-
-                ( _, event ) ->
-                    ( event, True )
     in
     { model | event = updatedEvent, confirmedAttendance = confirmedAttendance }
 
@@ -123,49 +98,30 @@ onRsvp requestResult model =
 
 view : Model -> Html Msg
 view model =
-    case model.event of
-        NotAsked ->
-            text ""
-
-        Loading ->
-            spinner
-
-        Loaded event ->
-            viewEventDetails model.common model.confirmedAttendance event
-
-        Failure ->
-            text "whoops"
-
-
-viewEventDetails : Common -> Bool -> FullEvent -> Html Msg
-viewEventDetails common confirmedAttendance event =
     let
-        title =
-            h1 [ class "title is-3" ] [ text event.name ]
-
         subtitle =
             p [ class "subtitle is-5" ] <|
                 [ text
-                    (event.callTime
+                    (model.event.callTime
                         |> fullDateTimeFormatter
-                            common.timeZone
+                            model.common.timeZone
                     )
                 , br [] []
                 ]
-                    ++ (event.location
+                    ++ (model.event.location
                             |> Maybe.map (\l -> [ text l ])
                             |> Maybe.withDefault []
                        )
 
         maybeComments =
-            event.comments
+            model.event.comments
                 |> Maybe.map
                     (\comments ->
                         [ p [] [ text comments, br [] [], br [] [] ] ]
                     )
 
         performAt =
-            event.gig
+            model.event.gig
                 |> Maybe.map .performanceTime
                 |> Maybe.map
                     (\performanceTime ->
@@ -173,7 +129,7 @@ viewEventDetails common confirmedAttendance event =
                             [ text "Perform at: "
                             , text <|
                                 timeFormatter
-                                    common.timeZone
+                                    model.common.timeZone
                                     performanceTime
                             ]
                         ]
@@ -182,11 +138,11 @@ viewEventDetails common confirmedAttendance event =
         points =
             p []
                 [ text "This event is worth "
-                , b [] [ text <| String.fromInt event.points, text " points" ]
+                , b [] [ text <| String.fromInt model.event.points, text " points" ]
                 ]
 
         maybeSection =
-            event.section
+            model.event.section
                 |> Maybe.map
                     (\section ->
                         [ p [] [ text <| "This event is for the " ++ section ++ " section" ] ]
@@ -197,19 +153,19 @@ viewEventDetails common confirmedAttendance event =
 
         requestAbsence =
             -- TODO: why do we need rsvpIssue
-            event.rsvpIssue
+            model.event.rsvpIssue
                 |> Maybe.Extra.filter
                     (\_ ->
                         not <|
                             eventIsOver
-                                common.now
-                                event
+                                model.common.now
+                                model.event
                     )
                 |> Maybe.map
                     (\_ ->
                         a
                             [ class "button is-primary is-outlined"
-                            , Route.href <| Route.Events { id = Just event.id, tab = Just Route.EventRequestAbsence }
+                            , Route.href <| Route.Events { id = Just model.event.id, tab = Just Route.EventRequestAbsence }
                             ]
                             [ text "Request Absence" ]
                     )
@@ -218,11 +174,11 @@ viewEventDetails common confirmedAttendance event =
             let
                 content =
                     case
-                        ( event.attendance
-                        , event.rsvpIssue
+                        ( model.event.attendance
+                        , model.event.rsvpIssue
                         , eventIsOver
-                            common.now
-                            event
+                            model.common.now
+                            model.event
                         )
                     of
                         ( Just eventAttendance, _, True ) ->
@@ -241,13 +197,13 @@ viewEventDetails common confirmedAttendance event =
     in
     div [] <|
         List.concat
-            [ [ title, subtitle ]
+            [ [ subtitle ]
             , Maybe.withDefault [] maybeComments
             , [ attendanceBlock ]
             , Maybe.withDefault [] performAt
             , [ points ]
             , maybeSection |> Maybe.withDefault []
-            , event.gig |> Maybe.map .uniform |> Maybe.map uniform |> Maybe.withDefault []
+            , model.event.gig |> Maybe.map .uniform |> Maybe.map uniform |> Maybe.withDefault []
             ]
 
 

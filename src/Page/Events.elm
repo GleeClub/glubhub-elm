@@ -7,6 +7,7 @@ import Html.Attributes exposing (class, href, id, src, style)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
+import Json.Decode.Pipeline exposing (custom)
 import List.Extra exposing (find)
 import Maybe.Extra exposing (filter, isJust, isNothing)
 import Models.Event exposing (FullEvent, fullEventDecoder)
@@ -41,27 +42,12 @@ type FullEventTab
 
 init : Common -> EventRoute -> ( Model, Cmd Msg )
 init common route =
-    let
-        model =
-            { common = common
-            , events = Loading
-            , selected =
-                if isJust route.id then
-                    Loading
-
-                else
-                    NotAsked
-            }
-
-        loadEventCmd =
-            case ( route.id, route.tab ) of
-                ( Nothing, _ ) ->
-                    Cmd.none
-
-                ( Just id, tab ) ->
-                    loadEvent common id (tab |> Maybe.withDefault EventDetails)
-    in
-    ( model, Cmd.batch [ loadEvents common, loadEventCmd ] )
+    ( { common = common
+      , events = Loading
+      , selected = NotAsked
+      }
+    , loadEvents common route
+    )
 
 
 
@@ -69,9 +55,8 @@ init common route =
 
 
 type Msg
-    = OnLoadEvents (Result Http.Error (List FullEvent))
-    | OnLoadEvent (Result Http.Error ( FullEvent, EventTab ))
-    | SelectEvent Int -- event id
+    = OnLoadEvents (Result Http.Error ( List FullEvent, EventRoute ))
+    | SelectEvent FullEvent
     | UnselectEvent
     | ChangeTab EventTab
     | DetailsMsg Details.Msg
@@ -84,45 +69,51 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadEvents (Ok allEvents) ->
-            ( { model | events = Loaded (List.reverse allEvents) }, Cmd.none )
+        OnLoadEvents (Ok ( allEvents, route )) ->
+            let
+                newModel =
+                    { model | events = Loaded (List.reverse allEvents) }
+            in
+            case route.id |> Maybe.andThen (\id -> allEvents |> List.Extra.find (\e -> e.id == id)) of
+                Just event ->
+                    changeTab event (route.tab |> Maybe.withDefault EventDetails) newModel
+
+                Nothing ->
+                    ( newModel, Cmd.none )
 
         OnLoadEvents (Err error) ->
             ( { model | events = Failure }, Cmd.none )
 
-        OnLoadEvent (Ok ( event, tab )) ->
-            changeTab event tab model
-
         UnselectEvent ->
-            ( { model | selected = NotAsked, tab = Nothing }, Route.replaceUrl model.common.key <| Route.Events { id = Nothing, tab = Nothing } )
+            ( { model | selected = NotAsked }, Route.replaceUrl model.common.key <| Route.Events { id = Nothing, tab = Nothing } )
 
-        SelectEvent eventId ->
-            ( model, loadEvent model.common eventId EventDetails )
+        SelectEvent event ->
+            changeTab event EventDetails model
 
         ChangeTab tab ->
-            case model.eventId of
-                Nothing ->
+            case model.selected of
+                Loaded ( event, eventTab ) ->
+                    changeTab event tab model
+
+                _ ->
                     ( model, Cmd.none )
 
-                Just id ->
-                    changeTab id tab model
-
         _ ->
-            case ( msg, model.tab ) of
-                ( DetailsMsg tabMsg, Just (FullEventDetails tabModel) ) ->
-                    Details.update tabMsg tabModel |> updateWith FullEventDetails DetailsMsg model
+            case ( msg, model.selected ) of
+                ( DetailsMsg tabMsg, Loaded ( event, FullEventDetails tabModel ) ) ->
+                    Details.update tabMsg tabModel |> updateWith event FullEventDetails DetailsMsg model
 
-                ( AttendeesMsg tabMsg, Just (FullEventAttendees tabModel) ) ->
-                    Attendees.update tabMsg tabModel |> updateWith FullEventAttendees AttendeesMsg model
+                ( AttendeesMsg tabMsg, Loaded ( event, FullEventAttendees tabModel ) ) ->
+                    Attendees.update tabMsg tabModel |> updateWith event FullEventAttendees AttendeesMsg model
 
-                ( SetlistMsg tabMsg, Just (FullEventSetlist tabModel) ) ->
-                    Setlist.update tabMsg tabModel |> updateWith FullEventSetlist SetlistMsg model
+                ( SetlistMsg tabMsg, Loaded ( event, FullEventSetlist tabModel ) ) ->
+                    Setlist.update tabMsg tabModel |> updateWith event FullEventSetlist SetlistMsg model
 
-                ( CarpoolsMsg tabMsg, Just (FullEventCarpools tabModel) ) ->
-                    Carpools.update tabMsg tabModel |> updateWith FullEventCarpools CarpoolsMsg model
+                ( CarpoolsMsg tabMsg, Loaded ( event, FullEventCarpools tabModel ) ) ->
+                    Carpools.update tabMsg tabModel |> updateWith event FullEventCarpools CarpoolsMsg model
 
-                ( RequestAbsenceMsg tabMsg, Just (FullEventRequestAbsence tabModel) ) ->
-                    RequestAbsence.update tabMsg tabModel |> updateWith FullEventRequestAbsence RequestAbsenceMsg model
+                ( RequestAbsenceMsg tabMsg, Loaded ( event, FullEventRequestAbsence tabModel ) ) ->
+                    RequestAbsence.update tabMsg tabModel |> updateWith event FullEventRequestAbsence RequestAbsenceMsg model
 
                 ( _, _ ) ->
                     ( model, Cmd.none )
@@ -154,24 +145,24 @@ tabTitle tab =
 changeTab : FullEvent -> EventTab -> Model -> ( Model, Cmd Msg )
 changeTab event tab model =
     let
-        ( model, newCmd ) =
+        ( newModel, newCmd ) =
             case tab of
                 EventDetails ->
-                    Details.init model.common event.id |> updateWith FullEventDetails DetailsMsg model
+                    Details.init model.common event |> updateWith event FullEventDetails DetailsMsg model
 
                 EventAttendees ->
-                    Attendees.init model.common event.id |> updateWith FullEventAttendees AttendeesMsg model
+                    Attendees.init model.common event.id |> updateWith event FullEventAttendees AttendeesMsg model
 
                 EventSetlist ->
-                    Setlist.init model.common event.id |> updateWith FullEventSetlist SetlistMsg model
+                    Setlist.init model.common event.id |> updateWith event FullEventSetlist SetlistMsg model
 
                 EventCarpools ->
-                    Carpools.init model.common event.id |> updateWith FullEventCarpools CarpoolsMsg model
+                    Carpools.init model.common event.id |> updateWith event FullEventCarpools CarpoolsMsg model
 
                 EventRequestAbsence ->
-                    RequestAbsence.init model.common event.id |> updateWith FullEventRequestAbsence RequestAbsenceMsg model
+                    RequestAbsence.init model.common event.id |> updateWith event FullEventRequestAbsence RequestAbsenceMsg model
     in
-    ( { model | selected = Loaded ( event, tabModel ) }
+    ( newModel
     , Cmd.batch
         [ newCmd
         , Route.replaceUrl model.common.key <| Route.Events { id = Just event.id, tab = Just tab }
@@ -179,25 +170,16 @@ changeTab event tab model =
     )
 
 
-updateWith : (tabModel -> FullEventTab) -> (tabMsg -> Msg) -> Model -> ( tabModel, Cmd tabMsg ) -> ( Model, Cmd Msg )
-updateWith toModel toMsg model ( tabModel, subCmd ) =
-    ( { model | tab = Just <| toModel tabModel }
+updateWith : FullEvent -> (tabModel -> FullEventTab) -> (tabMsg -> Msg) -> Model -> ( tabModel, Cmd tabMsg ) -> ( Model, Cmd Msg )
+updateWith event toModel toMsg model ( tabModel, subCmd ) =
+    ( { model | selected = Loaded ( event, toModel tabModel ) }
     , Cmd.map toMsg subCmd
     )
 
 
-loadEvents : Common -> Cmd Msg
-loadEvents common =
-    getRequest common "/events?full=true" (Http.expectJson OnLoadEvents (Decode.list <| fullEventDecoder))
-
-
-loadEvent : Common -> Int -> EventTab -> Cmd Msg
-loadEvent common eventId tab =
-    let
-        url =
-            "/events/" ++ String.fromInt eventId
-    in
-    getRequest common url (Http.expectJson OnLoadEvent fullEventDecoder)
+loadEvents : Common -> EventRoute -> Cmd Msg
+loadEvents common route =
+    getRequest common "/events?full=true" (Http.expectJson OnLoadEvents (Decode.map2 Tuple.pair (Decode.list <| fullEventDecoder) (Decode.succeed route)))
 
 
 type alias EventGroups =
@@ -228,7 +210,7 @@ organizeEvents now events =
 findSelectedEvent : Model -> Maybe FullEvent
 findSelectedEvent model =
     case ( model.events, model.selected ) of
-        ( Loaded events, Loaded selectedEvent ) ->
+        ( Loaded events, Loaded ( selectedEvent, _ ) ) ->
             events |> List.Extra.find (\event -> event.id == selectedEvent.id)
 
         ( _, _ ) ->
@@ -364,7 +346,7 @@ eventColumn model name events =
     let
         isSelected event =
             case model.selected of
-                Loaded selected ->
+                Loaded ( selected, _ ) ->
                     selected.id == event.id
 
                 _ ->
@@ -376,7 +358,7 @@ eventColumn model name events =
             { listItems = Loaded events
             , render = eventRow model
             , isSelected = isSelected
-            , onSelect = \e -> SelectEvent e.id
+            , onSelect = SelectEvent
             , messageIfEmpty = "No events here, misster."
             }
         ]

@@ -1,4 +1,4 @@
-module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, EventAttendee, EventCarpool, FullEvent, FullEventAttendance, FullEventGig, Gig, GradeChange, Grades, Member, MemberPermission, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder, gradeChangeDecoder, gradesDecoder, memberDecoder, memberPermissionDecoder)
+module Models.Event exposing (..)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
@@ -309,6 +309,21 @@ simpleAttendanceDecoder =
         |> required "didAttend" bool
         |> required "confirmed" bool
         |> required "minutesLate" int
+
+
+type alias EventWithAttendance =
+    { event : FullEvent
+    , attendance : SimpleAttendance
+    , rsvpIssue : Maybe String
+    }
+
+
+eventWithAttendanceDecoder : Decoder EventWithAttendance
+eventWithAttendanceDecoder =
+    Decode.succeed EventWithAttendance
+        |> custom fullEventDecoder
+        |> custom simpleAttendanceDecoder
+        |> optional "rsvpIssue" (nullable string) Nothing
 
 
 type alias EventCarpool =

@@ -1,6 +1,7 @@
 module Page.EditProfile exposing (Model, Msg(..), ProfileForm, actionButtons, defaultForm, enrollmentOptions, formForUser, headerText, horizontalField, init, update, view, viewForm)
 
 import Browser.Navigation as Nav
+import Components.Basics as Basics
 import Html exposing (Html, a, button, div, form, h1, h3, h4, img, input, label, option, p, section, select, span, text)
 import Html.Attributes exposing (checked, class, disabled, for, href, id, name, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -276,7 +277,8 @@ registerNewMember profile common =
 serializeProfile : ProfileForm -> Maybe String -> Encode.Value
 serializeProfile profile passHash =
     object
-        [ ( "firstName", string profile.firstName )
+        [ ( "email", string profile.email )
+        , ( "firstName", string profile.firstName )
         , ( "preferredName", string profile.preferredName )
         , ( "lastName", string profile.lastName )
         , ( "passHash", string <| Maybe.withDefault "" passHash )
@@ -506,7 +508,7 @@ viewForm model =
         , horizontalField "Arrived at Tech"
             (Just "arrivedAtTech")
             [ numberField "arrivedAtTech" (String.fromInt model.profileForm.arrivedAtTech) "2099" EditArrivedAtTech ]
-        , actionButtons <| isJust model.common.user
+        , actionButtons <| (model.common.user |> Maybe.map .email)
         ]
 
 
@@ -520,21 +522,22 @@ horizontalField name forField =
             ]
 
 
-actionButtons : Bool -> Html Msg
-actionButtons loggedIn =
+actionButtons : Maybe String -> Html Msg
+actionButtons maybeEmail =
     let
-        backButton =
-            button [ type_ "button", class "button", onClick BackToLogin ] [ text "Back" ]
+        backButton email =
+            Basics.linkButton "Back" (Route.Profile email)
 
         saveButton =
-            button [ type_ "submit", class "button is-primary", onClick Submit ] [ text "Save" ]
+            button [ type_ "submit", class "button is-primary" ] [ text "Save" ]
     in
     div [ class "buttons is-right" ] <|
-        (if loggedIn then
-            [ backButton ]
+        (case maybeEmail of
+            Just email ->
+                [ backButton email ]
 
-         else
-            []
+            Nothing ->
+                []
         )
             ++ [ saveButton ]
 

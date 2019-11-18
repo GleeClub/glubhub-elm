@@ -21,6 +21,7 @@ import Page.Minutes
 import Page.Profile
 import Page.Repertoire
 import Page.Roster
+import Page.Events.EditCarpools as EditCarpools
 import Route exposing (Route(..))
 import Task
 import Time exposing (Posix, here, now)
@@ -46,6 +47,7 @@ type Page
     | PageProfile Page.Profile.Model
     | PageEditProfile Page.EditProfile.Model
     | PageEvents Page.Events.Model
+    | PageEditCarpools EditCarpools.Model
     | PageRepertoire Page.Repertoire.Model
     | PageMinutes Page.Minutes.Model
       -- | PageForgotPassword Page.ForgotPassword.Model
@@ -65,6 +67,7 @@ type Msg
     | ProfileMsg Page.Profile.Msg
     | EditProfileMsg Page.EditProfile.Msg
     | EventsMsg Page.Events.Msg
+    | EditCarpoolsMsg EditCarpools.Msg
     | RepertoireMsg Page.Repertoire.Msg
     | MinutesMsg Page.Minutes.Msg
       -- | ForgotPasswordMsg Page.ForgotPassword.Msg
@@ -210,6 +213,12 @@ loadCurrentPage model =
                         ( Just (Route.Events route), _ ) ->
                             Page.Events.init common route |> updateWith PageEvents EventsMsg model
 
+                        ( Just (Route.EditCarpools route), PageEditCarpools pageModel ) ->
+                            ( model, Cmd.none )
+
+                        ( Just (Route.EditCarpools route), _ ) ->
+                            EditCarpools.init common route |> updateWith PageEditCarpools EditCarpoolsMsg model
+
                         ( Just (Route.Repertoire songId), PageRepertoire pageModel ) ->
                             ( model, Cmd.none )
 
@@ -336,6 +345,12 @@ update msg model =
         ( EventsMsg _, _ ) ->
             ( model, Cmd.none )
 
+        ( EditCarpoolsMsg pageMsg, PageEditCarpools pageModel ) ->
+            EditCarpools.update pageMsg pageModel |> updateWith PageEditCarpools EditCarpoolsMsg model
+
+        ( EditCarpoolsMsg _, _ ) ->
+            ( model, Cmd.none )
+
         ( RepertoireMsg pageMsg, PageRepertoire pageModel ) ->
             Page.Repertoire.update pageMsg pageModel |> updateWith PageRepertoire RepertoireMsg model
 
@@ -427,6 +442,9 @@ currentPage model =
 
         PageEvents pageModel ->
             Page.Events.view pageModel |> Html.map EventsMsg
+
+        PageEditCarpools pageModel ->
+            EditCarpools.view pageModel |> Html.map EditCarpoolsMsg
 
         PageRepertoire pageModel ->
             Page.Repertoire.view pageModel |> Html.map RepertoireMsg

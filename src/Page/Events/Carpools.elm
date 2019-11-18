@@ -1,26 +1,33 @@
-module Page.Events.Carpools exposing (Model, Msg(..), init, loadCarpools, update, view, viewCarpoolRow, viewCarpoolsList)
+module Page.Events.Carpools exposing (Model, Msg(..), init, update, view)
 
-import Html exposing (Html, b, br, div, li, text, ul)
-import Html.Attributes exposing (id)
+import Html exposing (Html, b, a, br, div, li, text, ul)
+import Html.Attributes exposing (class, id)
 import Http
 import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), getRequest, spinner)
-
+import Utils exposing (Common, RemoteData(..), permittedTo, getRequest, spinner)
+import Components.Basics as Basics
 
 
 ---- MODEL ----
 
 
 type alias Model =
-    { carpools : RemoteData (List EventCarpool)
+    { common : Common
+    , eventId : Int
+    , carpools : RemoteData (List EventCarpool)
     }
 
 
 init : Common -> Int -> ( Model, Cmd Msg )
 init common eventId =
-    ( { carpools = Loading }, loadCarpools common eventId )
+    ( { common = common, eventId = eventId, carpools = Loading }, loadCarpools common eventId )
+
+
+canEditCarpools : String
+canEditCarpools =
+    "edit-carpool"
 
 
 
@@ -61,6 +68,12 @@ loadCarpools common eventId =
 view : Model -> Html Msg
 view model =
     let
+        maybeEditButton =
+            if model.common.user |> Maybe.map (permittedTo canEditCarpools) |> Maybe.withDefault False then
+                Basics.linkButton "Edit Carpools" (Route.EditCarpools model.eventId)
+            else
+                text ""
+
         content =
             case model.carpools of
                 NotAsked ->
@@ -70,7 +83,10 @@ view model =
                     spinner
 
                 Loaded carpools ->
-                    viewCarpoolsList carpools
+                    div []
+                        [ carpoolList carpools
+                        , maybeEditButton
+                        ]
 
                 Failure ->
                     text "whoops"
@@ -78,17 +94,17 @@ view model =
     div [ id "carpools" ] [ content ]
 
 
-viewCarpoolsList : List EventCarpool -> Html Msg
-viewCarpoolsList carpools =
+carpoolList : List EventCarpool -> Html Msg
+carpoolList carpools =
     if List.length carpools == 0 then
         div [] [ text "No carpools set for this event." ]
 
     else
-        ul [] <| List.map viewCarpoolRow carpools
+        ul [] <| List.map singleCarpool carpools
 
 
-viewCarpoolRow : EventCarpool -> Html Msg
-viewCarpoolRow carpool =
+singleCarpool : EventCarpool -> Html Msg
+singleCarpool carpool =
     let
         passengers =
             carpool.passengers |> List.filter (\p -> p.email /= carpool.driver.email)

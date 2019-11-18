@@ -94,9 +94,9 @@ getRequest common url expect =
 postRequest : Common -> String -> Http.Body -> Http.Expect msg -> Cmd msg
 postRequest common url body expect =
     Http.request
-        { method = "GET"
+        { method = "POST"
         , url = apiUrl ++ url
-        , body = Http.emptyBody
+        , body = body
         , headers = [ Http.header "token" common.token ]
         , expect = expect
         , timeout = Nothing

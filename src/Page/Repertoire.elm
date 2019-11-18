@@ -196,8 +196,6 @@ view model =
                         [ div
                             [ class "box"
                             , id songDivId
-                            , style "padding-top" "70px"
-                            , style "margin-top" "-70px"
                             ]
                             [ selectedSongBlock ]
                         ]
