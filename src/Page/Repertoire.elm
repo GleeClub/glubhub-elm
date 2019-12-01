@@ -1,6 +1,9 @@
-module Page.Repertoire exposing (Model, Msg(..), getLink, init, loadSongs, noSongSelected, organizeSongs, songDivId, update, view, viewLinkSection, viewLinkTable, viewSelectedSong, viewSongList)
+module Page.Repertoire exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
+import Components.Basics as Basics
+import Components.SelectableList exposing (selectableList)
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, tr)
 import Html.Attributes exposing (class, href, id, placeholder, src, style, target, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -11,9 +14,10 @@ import List.Extra exposing (find)
 import MD5
 import Maybe.Extra exposing (filter, isJust)
 import Models.Event exposing (Member, memberDecoder)
-import Models.Song exposing (Song, SongLinkSection, pitchToString, songDecoder, songModeToString)
+import Models.Song exposing (Pitch, Song, SongLink, SongLinkSection, SongMode, halfStepsAboveA, pitchToString, songDecoder, songModeToString)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, notFoundView, scrollToElement, setToken, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), getRequest, mapLoaded, playPitch, remoteToMaybe, resultToRemote, scrollToElement)
 
 
 
@@ -38,7 +42,9 @@ init common maybeSongId =
                 Nothing ->
                     ( [], NotAsked )
     in
-    ( { common = common, songs = Loading, selected = selected }, Cmd.batch <| [ loadSongs common ] ++ toLoadSong )
+    ( { common = common, songs = Loading, selected = selected }
+    , Cmd.batch <| loadSongs common :: toLoadSong
+    )
 
 
 songDivId : String
@@ -51,25 +57,25 @@ songDivId =
 
 
 type Msg
-    = OnLoadSongs (Result Http.Error (List Song))
-    | OnLoadSong (Result Http.Error Song)
+    = OnLoadSongs (GreaseResult (List Song))
+    | OnLoadSong (GreaseResult Song)
     | SelectSong Int
+      -- | OpenEditSong
+    | UnselectSong
+    | PlayPitch Pitch
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadSongs (Ok songs) ->
-            ( { model | songs = Loaded songs }, Cmd.none )
-
-        OnLoadSongs (Err _) ->
-            ( { model | songs = Failure }, Cmd.none )
+        OnLoadSongs songsResult ->
+            ( { model | songs = resultToRemote songsResult }, Cmd.none )
 
         OnLoadSong (Ok song) ->
             ( { model | selected = Loaded song }, scrollToElement songDivId )
 
-        OnLoadSong (Err _) ->
-            ( { model | selected = Failure }, Cmd.none )
+        OnLoadSong (Err error) ->
+            ( { model | selected = Failure error }, Cmd.none )
 
         SelectSong selected ->
             ( { model | selected = Loading }
@@ -79,6 +85,12 @@ update msg model =
                 ]
             )
 
+        UnselectSong ->
+            ( { model | selected = NotAsked }, Cmd.none )
+
+        PlayPitch pitch ->
+            ( model, playPitch (halfStepsAboveA pitch) )
+
 
 
 ---- DATA ----
@@ -86,7 +98,8 @@ update msg model =
 
 loadSongs : Common -> Cmd Msg
 loadSongs common =
-    getRequest common "/repertoire" (Http.expectJson OnLoadSongs <| Decode.list songDecoder)
+    getRequest common "/repertoire" (Decode.list songDecoder)
+        |> Task.attempt OnLoadSongs
 
 
 loadSong : Common -> Int -> Cmd Msg
@@ -95,22 +108,8 @@ loadSong common songId =
         url =
             "/repertoire/" ++ String.fromInt songId ++ "?details=true"
     in
-    getRequest common url (Http.expectJson OnLoadSong songDecoder)
-
-
-organizeSongs : List Song -> ( List Song, List Song )
-organizeSongs songs =
-    let
-        sortedSongs =
-            songs |> List.sortBy (\song -> song.title)
-
-        currentSongs =
-            sortedSongs |> List.filter (\song -> song.current)
-
-        otherSongs =
-            sortedSongs |> List.filter (\song -> not song.current)
-    in
-    ( currentSongs, otherSongs )
+    getRequest common url songDecoder
+        |> Task.attempt OnLoadSong
 
 
 getLink : String -> String -> String
@@ -136,184 +135,112 @@ getLink type_ target =
 view : Model -> Html Msg
 view model =
     let
-        songListBlock title content =
-            div [ class "box" ]
-                [ h1 [ class "title is-4" ] [ text title ]
-                , content
-                ]
+        currentSongsFilter =
+            .current
 
-        selectedSongBlock =
-            case model.selected of
-                NotAsked ->
-                    noSongSelected
+        otherAToGFilter song =
+            not song.current && (song.title |> String.left 1 |> String.toLower) < "h"
 
-                Loading ->
-                    spinner
+        otherHToPFilter song =
+            let
+                firstChar =
+                    song.title |> String.left 1 |> String.toLower
+            in
+            not song.current && firstChar > "g" && firstChar < "q"
 
-                Loaded song ->
-                    viewSelectedSong song
-
-                Failure ->
-                    text "whoops..."
-
-        ( currentSongList, otherSongList ) =
-            case model.songs of
-                NotAsked ->
-                    ( text "", text "" )
-
-                Loading ->
-                    ( spinner, spinner )
-
-                Loaded songs ->
-                    let
-                        ( currentSongs, otherSongs ) =
-                            organizeSongs songs
-
-                        selectedSong =
-                            case model.selected of
-                                Loaded song ->
-                                    Just song
-
-                                _ ->
-                                    Nothing
-                    in
-                    ( viewSongList selectedSong currentSongs
-                    , viewSongList selectedSong otherSongs
-                    )
-
-                Failure ->
-                    ( text "Oops I did", text "it again." )
+        otherQToZFilter song =
+            not song.current && (song.title |> String.left 1 |> String.toLower) > "p"
     in
     div [ id "repertoire" ]
-        [ section [ class "section" ]
+        [ section
+            [ class "section" ]
             [ div [ class "container" ]
                 [ div [ class "columns" ]
-                    [ div [ class "column is-narrow" ]
-                        [ songListBlock "Current" currentSongList
-                        , songListBlock "Other" otherSongList
-                        ]
-                    , div [ class "column" ]
-                        [ div
-                            [ class "box"
-                            , id songDivId
-                            ]
-                            [ selectedSongBlock ]
-                        ]
+                    [ songList model "Current" currentSongsFilter
+                    , songList model "A-G" otherAToGFilter
+                    , songList model "H-P" otherHToPFilter
+                    , songList model "Q-Z" otherQToZFilter
                     ]
                 ]
             ]
+        , songSidebar model.selected
         ]
 
 
-viewSongList : Maybe Song -> List Song -> Html Msg
-viewSongList selectedSong songs =
-    let
-        isSelected song =
-            isJust (selectedSong |> filter (\selected -> selected.id == song.id))
-
-        songRow song =
-            tr
-                [ onClick <| SelectSong song.id
-                , style "background-color"
-                    (if isSelected song then
-                        "#eeeeee"
-
-                     else
-                        ""
-                    )
-                ]
-                [ td [] [ text song.title ] ]
-    in
-    table [ class "table is-fullwidth is-hoverable" ]
-        [ tbody [] <| List.map songRow songs ]
+songList : Model -> String -> (Song -> Bool) -> Html Msg
+songList model title filter =
+    div [ class "column is-one-quarter is-centered" ]
+        [ Basics.title title
+        , selectableList
+            { listItems = model.songs |> mapLoaded (List.filter filter)
+            , render = \song -> [ td [] [ text song.title ] ]
+            , onSelect = \song -> SelectSong song.id
+            , messageIfEmpty = "Nothin' to see here, buddy."
+            , isSelected =
+                \song ->
+                    model.selected
+                        |> remoteToMaybe
+                        |> Maybe.map (\s -> s.id == song.id)
+                        |> Maybe.withDefault False
+            }
+        ]
 
 
-noSongSelected : Html Msg
-noSongSelected =
-    p [] [ text "Select a song." ]
+songSidebar : RemoteData Song -> Html Msg
+songSidebar remoteSong =
+    Basics.sidebar
+        { data = remoteSong
+        , render = viewSelectedSong
+        , close = UnselectSong
+        }
 
 
 viewSelectedSong : Song -> Html Msg
 viewSelectedSong song =
+    div []
+        [ Basics.title song.title
+        , song.info
+            |> Maybe.map (\info -> p [] [ text info, br [] [] ])
+            |> Maybe.withDefault (text "")
+        , pitchSection "Key" song.mode song.key
+        , pitchSection "Starting pitch" Nothing song.startingPitch
+        , br [] []
+        , linkTable (song.links |> Maybe.withDefault [])
+        ]
+
+
+pitchSection : String -> Maybe SongMode -> Maybe Pitch -> Html Msg
+pitchSection name maybeMode maybePitch =
     let
-        title =
-            [ h1 [ class "title is-4" ] [ text song.title ] ]
-
-        info =
-            case song.info of
-                Just songInfo ->
-                    [ p [] [ text songInfo ], br [] [] ]
-
-                Nothing ->
-                    []
-
-        mode =
-            case song.mode of
-                Just songMode ->
-                    b [] [ text <| (" " ++ songModeToString songMode) ]
+        pitchText =
+            case maybePitch of
+                Just pitch ->
+                    b
+                        ((onClick <| PlayPitch pitch)
+                            :: Basics.tooltip "Hey kid, wanna pitch?"
+                        )
+                        [ text <| pitchToString pitch ]
 
                 Nothing ->
-                    text ""
-
-        key =
-            [ p []
-                [ text "Key: "
-                , b [] [ text (song.key |> Maybe.map pitchToString |> Maybe.withDefault "?") ]
-                , mode
-                ]
-            ]
-
-        startingPitch =
-            [ p []
-                [ text "Starting pitch: "
-                , b [] [ text <| (song.startingPitch |> Maybe.map pitchToString |> Maybe.withDefault "?") ]
-                ]
-            ]
+                    b [] [ text "?" ]
     in
-    div [] <|
-        List.concat
-            [ title
-            , info
-            , key
-            , startingPitch
-            , [ br [] [] ]
-            , [ viewLinkTable (song.links |> Maybe.withDefault []) ]
-            ]
+    p []
+        [ text <| name ++ ": "
+        , pitchText
+        , text (maybeMode |> Maybe.map (\m -> " " ++ songModeToString m) |> Maybe.withDefault "")
+        ]
 
 
-viewLinkTable : List SongLinkSection -> Html Msg
-viewLinkTable linkSections =
-    table [ class "table is-fullwidth" ] <| List.map viewLinkSection linkSections
+linkTable : List SongLinkSection -> Html Msg
+linkTable linkSections =
+    table [ class "table is-fullwidth" ] <| List.map linkSection linkSections
 
 
-viewLinkSection : SongLinkSection -> Html Msg
-viewLinkSection linkSection =
+linkSection : SongLinkSection -> Html Msg
+linkSection songLinkSection =
     let
-        sheetMusicLink link =
-            a [ class "button is-outlined is-primary", href <| getLink "pdf" link.target ]
-                [ span [ class "icon" ]
-                    [ i [ class "fas fa-scroll" ] [] ]
-                , span [] [ text link.name ]
-                ]
-
-        midiLink link =
-            a [ class "button is-outlined is-primary", href <| getLink "midi" link.target ]
-                [ span [ class "icon" ]
-                    [ i [ class "fas fa-volume-up" ] [] ]
-                , span [] [ text link.name ]
-                ]
-
-        videoLink link =
-            span [ style "display" "flex", style "align-items" "center" ]
-                [ span [ class "icon has-text-grey-lighter", style "margin-right" ".5rem" ]
-                    [ i [ class "fas fa-external-link-alt" ] [] ]
-                , a [ class "button", href <| getLink "performance" link.target, target "_blank" ]
-                    [ span [ class "icon has-text-danger" ] [ i [ class "fab fa-youtube" ] [] ] ]
-                , p [] [ span [ style "padding-left" "5px" ] [ text link.name ] ]
-                ]
-
         viewSection =
-            case ( linkSection.name, List.isEmpty linkSection.links ) of
+            case ( songLinkSection.name, List.isEmpty songLinkSection.links ) of
                 ( "Sheet Music", False ) ->
                     Just sheetMusicLink
 
@@ -329,9 +256,60 @@ viewLinkSection linkSection =
     case viewSection of
         Just viewer ->
             tr [ style "border" "none" ]
-                [ td [ style "border" "none" ] [ text linkSection.name ]
-                , td [ style "border" "none" ] <| (List.map viewer linkSection.links |> List.intersperse (text " "))
+                [ td [ style "border" "none" ] [ text songLinkSection.name ]
+                , td [ style "border" "none" ] <|
+                    (List.map viewer songLinkSection.links |> List.intersperse (text " "))
                 ]
 
         Nothing ->
             tr [ style "display" "none" ] []
+
+
+sheetMusicLink : SongLink -> Html Msg
+sheetMusicLink link =
+    a
+        [ class "button is-outlined is-primary"
+        , href <| getLink "pdf" link.target
+        ]
+        [ span [ class "icon" ]
+            [ i [ class "fas fa-scroll" ] [] ]
+        , span [] [ text link.name ]
+        ]
+
+
+midiLink : SongLink -> Html Msg
+midiLink link =
+    a
+        [ class "button is-outlined is-primary"
+        , href <| getLink "midi" link.target
+        ]
+        [ span [ class "icon" ]
+            [ i [ class "fas fa-volume-up" ] [] ]
+        , span [] [ text link.name ]
+        ]
+
+
+videoLink : SongLink -> Html Msg
+videoLink link =
+    span
+        [ style "display" "flex"
+        , style "align-items" "center"
+        ]
+        [ span
+            [ class "icon has-text-grey-lighter"
+            , style "margin-right" ".5rem"
+            ]
+            [ i [ class "fas fa-external-link-alt" ] [] ]
+        , a
+            [ class "button"
+            , href <| getLink "performance" link.target
+            , target "_blank"
+            ]
+            [ span [ class "icon has-text-danger" ]
+                [ i [ class "fab fa-youtube" ] [] ]
+            ]
+        , p []
+            [ span [ style "padding-left" "5px" ]
+                [ text link.name ]
+            ]
+        ]

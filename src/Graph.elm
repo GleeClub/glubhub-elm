@@ -1,4 +1,4 @@
-module Graph exposing (EventHovered, graphGrades)
+module Graph exposing (graphGrades)
 
 -- import Color
 
@@ -10,13 +10,14 @@ import Models.Info exposing (Semester)
 import Path exposing (Path)
 import Scale exposing (ContinuousScale)
 import Shape
-import Time exposing (Posix)
+import Time exposing (Posix, millisToPosix, posixToMillis)
 import TypedSvg exposing (circle, g, svg)
 import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, title, transform, viewBox)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
-import TypedSvg.Events exposing (onMouseEnter, onMouseLeave)
+import TypedSvg.Events exposing (onClick, onMouseEnter, onMouseLeave)
 import TypedSvg.Types exposing (Fill(..), Length(..), Transform(..))
+import Utils exposing (goldColor)
 
 
 w : Float
@@ -26,12 +27,7 @@ w =
 
 h : Float
 h =
-    500
-
-
-goldColor : Color
-goldColor =
-    Color.rgb 0.706 0.643 0.412
+    400
 
 
 padding : Float
@@ -66,13 +62,20 @@ transformToLineData semester ( callTime, partialScore ) =
 
 transformToAreaData : Semester -> ( Posix, Float ) -> Maybe ( ( Float, Float ), ( Float, Float ) )
 transformToAreaData semester ( callTime, partialScore ) =
-    Just
-        ( ( Scale.convert (xScale semester) callTime, Tuple.first (Scale.rangeExtent yScale) )
-        , ( Scale.convert (xScale semester) callTime, Scale.convert yScale partialScore )
-        )
+    let
+        callTimeCoord =
+            Scale.convert (xScale semester) callTime
+
+        scoreLowerBound =
+            Tuple.first (Scale.rangeExtent yScale)
+
+        score =
+            Scale.convert yScale partialScore
+    in
+    Just ( ( callTimeCoord, scoreLowerBound ), ( callTimeCoord, score ) )
 
 
-eventPoint : Semester -> (Maybe EventHovered -> msg) -> FullEvent -> Svg msg
+eventPoint : Semester -> (Maybe FullEvent -> msg) -> FullEvent -> Svg msg
 eventPoint semester hoverMsg event =
     let
         xPos =
@@ -84,7 +87,8 @@ eventPoint semester hoverMsg event =
     circle
         [ r <| Px 3
         , fill (Fill goldColor)
-        , onMouseEnter (hoverMsg <| Just { event = event, x = round xPos, y = round yPos })
+        , onClick (hoverMsg <| Just event)
+        , onMouseEnter (hoverMsg <| Just event)
         , onMouseLeave (hoverMsg Nothing)
         , cx <| Px xPos
         , cy <| Px yPos
@@ -111,13 +115,21 @@ eventPartialScore event =
     event.attendance |> Maybe.map .partialScore |> Maybe.withDefault 0
 
 
-graphGrades : Semester -> List FullEvent -> (Maybe EventHovered -> msg) -> Svg msg
+graphGrades : Semester -> List FullEvent -> (Maybe FullEvent -> msg) -> Svg msg
 graphGrades semester events hoverMsg =
     let
+        callTimesAndScores =
+            events |> List.map (\event -> ( event.callTime, eventPartialScore event ))
+
+        oneMonthInMillis =
+            1000 * 60 * 60 * 24 * 30
+
         pastEvents =
-            case ( events |> List.head, events |> List.reverse |> List.head ) of
-                ( Just firstEvent, Just lastEvent ) ->
-                    [ ( firstEvent.callTime, 0 ) ] ++ (events |> List.map (\event -> ( event.callTime, eventPartialScore event ))) ++ [ ( lastEvent.callTime, 0 ) ]
+            case ( callTimesAndScores |> List.head, callTimesAndScores |> List.reverse |> List.head ) of
+                ( Just ( firstCallTime, firstScore ), Just ( lastCallTime, lastScore ) ) ->
+                    ( semester.startDate, firstScore )
+                        :: callTimesAndScores
+                        ++ [ ( semester.endDate, lastScore ) ]
 
                 ( _, _ ) ->
                     []
@@ -128,19 +140,12 @@ graphGrades semester events hoverMsg =
         , g [ transform [ Translate (padding - 1) padding ] ]
             [ yAxis ]
         , g [ transform [ Translate padding padding ], class [ "series" ] ] <|
-            ([ Path.element (area semester pastEvents) [ strokeWidth 2, fill <| Fill <| Color.rgba 1 0 0 0.54 ]
-             , Path.element (line semester pastEvents) [ stroke goldColor, strokeWidth 2, fill FillNone ]
-             ]
-                ++ (events |> List.map (eventPoint semester hoverMsg))
-            )
+            Path.element (area semester pastEvents)
+                [ strokeWidth 2, fill <| Fill <| Color.rgba 0.4 0.4 0.4 0.54 ]
+                :: Path.element (line semester pastEvents)
+                    [ stroke goldColor, strokeWidth 2, fill FillNone ]
+                :: (events |> List.map (eventPoint semester hoverMsg))
         ]
-
-
-type alias EventHovered =
-    { event : FullEvent
-    , x : Int
-    , y : Int
-    }
 
 
 

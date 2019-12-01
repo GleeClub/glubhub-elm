@@ -1,7 +1,9 @@
-module Page.Minutes exposing (Model, Msg(..), editMinutes, init, loadAllMinutes, loadSingleMinutes, update, view, viewCompleteMinutes, viewSelectedMinutes, viewTab, viewTabBlock)
+module Page.Minutes exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
-import Components.SelectableList exposing (SelectableListData, selectableList)
+import Components.Basics as Basics
+import Components.SelectableList exposing (selectableList)
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, button, div, form, h1, img, input, label, li, p, section, span, td, text, ul)
 import Html.Attributes exposing (class, href, id, placeholder, property, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -14,7 +16,8 @@ import Maybe.Extra exposing (filter, isJust)
 import Models.Document exposing (MeetingMinutes, meetingMinutesDecoder)
 import Models.Event exposing (Member)
 import Route exposing (MinutesRoute, MinutesTab(..), Route)
-import Utils exposing (Common, RemoteData(..), getRequest, notFoundView, permittedTo, rawHtml, setToken, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), getRequest, permittedTo, rawHtml, remoteToMaybe, setToken)
 
 
 
@@ -67,8 +70,8 @@ editMinutes =
 
 
 type Msg
-    = OnLoadAllMinutes (Result Http.Error (List MeetingMinutes))
-    | OnLoadSingleMinutes (Result Http.Error MeetingMinutes)
+    = OnLoadAllMinutes (GreaseResult (List MeetingMinutes))
+    | OnLoadSingleMinutes (GreaseResult MeetingMinutes)
     | SelectMinutes Int
     | SelectTab MinutesTab
 
@@ -79,14 +82,14 @@ update msg model =
         OnLoadAllMinutes (Ok minutes) ->
             ( { model | minutes = Loaded (List.reverse minutes) }, Cmd.none )
 
-        OnLoadAllMinutes (Err _) ->
-            ( { model | minutes = Failure }, Cmd.none )
+        OnLoadAllMinutes (Err error) ->
+            ( { model | minutes = Failure error }, Cmd.none )
 
         OnLoadSingleMinutes (Ok minutes) ->
             updateUrl { model | selected = Loaded minutes }
 
-        OnLoadSingleMinutes (Err _) ->
-            updateUrl { model | selected = Failure }
+        OnLoadSingleMinutes (Err error) ->
+            updateUrl { model | selected = Failure error }
 
         SelectMinutes selected ->
             let
@@ -114,24 +117,22 @@ update msg model =
 
 updateUrl : Model -> ( Model, Cmd Msg )
 updateUrl model =
-    let
-        minutesId =
-            case model.selected of
-                Loaded minutes ->
-                    Just minutes.id
-
-                _ ->
-                    Nothing
-
-        route =
-            Route.Minutes { id = minutesId, tab = model.tab }
-    in
-    ( model, Route.replaceUrl model.common.key route )
+    ( model
+    , Route.replaceUrl model.common.key <|
+        Route.Minutes
+            { id =
+                model.selected
+                    |> remoteToMaybe
+                    |> Maybe.map .id
+            , tab = model.tab
+            }
+    )
 
 
 loadAllMinutes : Common -> Cmd Msg
 loadAllMinutes common =
-    getRequest common "/meeting_minutes" (Http.expectJson OnLoadAllMinutes <| Decode.list meetingMinutesDecoder)
+    getRequest common "/meeting_minutes" (Decode.list meetingMinutesDecoder)
+        |> Task.attempt OnLoadAllMinutes
 
 
 loadSingleMinutes : Common -> Int -> Cmd Msg
@@ -140,7 +141,8 @@ loadSingleMinutes common minutesId =
         url =
             "/meeting_minutes/" ++ String.fromInt minutesId
     in
-    getRequest common url (Http.expectJson OnLoadSingleMinutes meetingMinutesDecoder)
+    getRequest common url meetingMinutesDecoder
+        |> Task.attempt OnLoadSingleMinutes
 
 
 
@@ -150,22 +152,19 @@ loadSingleMinutes common minutesId =
 view : Model -> Html Msg
 view model =
     let
-        isSelected : MeetingMinutes -> Bool
         isSelected minutes =
-            case model.selected of
-                Loaded selected ->
-                    selected.id == minutes.id
-
-                _ ->
-                    False
+            model.selected
+                |> remoteToMaybe
+                |> Maybe.map (\s -> s.id == minutes.id)
+                |> Maybe.withDefault False
 
         minutesList =
             selectableList
                 { listItems = model.minutes
                 , render = \minutes -> [ td [] [ text minutes.name ] ]
-                , isSelected = isSelected
                 , onSelect = \minutes -> SelectMinutes minutes.id
                 , messageIfEmpty = "No minutes"
+                , isSelected = isSelected
                 }
     in
     div [ id "minutes" ]
@@ -184,26 +183,19 @@ view model =
 viewSelectedMinutes : Model -> Html Msg
 viewSelectedMinutes model =
     let
-        content =
-            case model.selected of
-                NotAsked ->
-                    [ p [] [ text "Select minutes" ] ]
+        notSelected =
+            p [] [ text "Select minutes" ]
 
-                Loading ->
-                    [ spinner ]
-
-                Loaded minutes ->
-                    [ viewTabs model.common.user model.tab minutes.id ]
-                        ++ viewTabBlock minutes (model.tab |> Maybe.withDefault Public) model.common.user
-
-                Failure ->
-                    [ text "Whoops" ]
+        render minutes =
+            div [] <|
+                selectedMinutesTabBar model.common.user model.tab minutes.id
+                    :: selectedMinutesTab minutes (model.tab |> Maybe.withDefault Public) model.common.user
     in
-    div [ class "box" ] content
+    Basics.box [ model.selected |> Basics.remoteContentFull notSelected render ]
 
 
-viewTabs : Maybe Member -> Maybe MinutesTab -> Int -> Html Msg
-viewTabs user selectedTab minutesId =
+selectedMinutesTabBar : Maybe Member -> Maybe MinutesTab -> Int -> Html Msg
+selectedMinutesTabBar user selectedTab minutesId =
     let
         canViewCompleteMinutes =
             user |> Maybe.map (permittedTo viewCompleteMinutes) |> Maybe.withDefault False
@@ -213,14 +205,14 @@ viewTabs user selectedTab minutesId =
 
         tabs =
             List.concat <|
-                [ [ viewTab Public selectedTab minutesId ]
+                [ [ singleTab Public selectedTab minutesId ]
                 , if canViewCompleteMinutes then
-                    [ viewTab Private selectedTab minutesId ]
+                    [ singleTab Private selectedTab minutesId ]
 
                   else
                     []
                 , if canEditMinutes then
-                    [ viewTab Edit selectedTab minutesId ]
+                    [ singleTab Edit selectedTab minutesId ]
 
                   else
                     []
@@ -246,8 +238,8 @@ tabName tab =
             "Edit"
 
 
-viewTab : MinutesTab -> Maybe MinutesTab -> Int -> Html Msg
-viewTab tab selectedTab minutesId =
+singleTab : MinutesTab -> Maybe MinutesTab -> Int -> Html Msg
+singleTab tab selectedTab minutesId =
     let
         isSelected =
             selectedTab |> filter (\t -> t == tab) |> isJust
@@ -266,8 +258,8 @@ viewTab tab selectedTab minutesId =
         ]
 
 
-viewTabBlock : MeetingMinutes -> MinutesTab -> Maybe Member -> List (Html Msg)
-viewTabBlock minutes tab user =
+selectedMinutesTab : MeetingMinutes -> MinutesTab -> Maybe Member -> List (Html Msg)
+selectedMinutesTab minutes tab user =
     case tab of
         Public ->
             minutes.public |> Maybe.withDefault "" |> rawHtml

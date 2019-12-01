@@ -4,6 +4,7 @@ module Main exposing (init, main, subscriptions)
 
 import Browser exposing (UrlRequest)
 import Browser.Navigation as Nav exposing (Key)
+import Components.Basics exposing (spinner)
 import Html exposing (Html, a, button, div, i, nav, section, span, text)
 import Html.Attributes exposing (attribute, class, href, id, style)
 import Html.Events exposing (onClick)
@@ -15,18 +16,18 @@ import Models.Info exposing (Info, emptyInfo, emptySemester, infoDecoder, semest
 import Page.Admin
 import Page.EditProfile
 import Page.Events
+import Page.Events.EditCarpools as EditCarpools
 import Page.Home
 import Page.Login
 import Page.Minutes
 import Page.Profile
 import Page.Repertoire
 import Page.Roster
-import Page.Events.EditCarpools as EditCarpools
 import Route exposing (Route(..))
 import Task
 import Time exposing (Posix, here, now)
 import Url exposing (Url)
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, handleJsonResponse, spinner)
+import Utils exposing (Common, RemoteData(..), alert, apiUrl, handleJsonResponse)
 
 
 type alias Model =
@@ -414,7 +415,7 @@ view model =
                 , content
                 ]
     in
-    { title = "App"
+    { title = "GlubHub"
     , body = [ body ]
     }
 

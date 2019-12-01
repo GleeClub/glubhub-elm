@@ -1,8 +1,13 @@
 .oldgold-text {
   color: #b4a46a;
 }
+
 tooltip.is-tooltip-primary::before {
   background: rgba(0, 209, 178, 0.1);
+}
+
+.tooltip:hover::before {
+  z-index: 200;
 }
 
 table.is-fullwidth.is-hoverable:hover {
@@ -53,7 +58,28 @@ div.spinner i {
   overflow-x: hidden;
   overflow-y: scroll;
   transition: 2s;
+  padding: 20px;
   padding-top: 100px;
+}
+
+@media screen and (max-width: 768px) {
+  .sidenav:not(.hidden) {
+    width: 80%;
+  }
+
+  .sidenav.hidden {
+    width: 0%;
+  }
+}
+
+@media screen and (min-width: 769px) {
+  .sidenav:not(.hidden) {
+    width: 40%;
+  }
+
+  .sidenav.hidden {
+    width: 0%;
+  }
 }
 
 .transparent-overlay {
@@ -66,4 +92,21 @@ div.spinner i {
   background-color: rgba(0, 0, 0, 0.5);
   cursor: pointer;
   z-index: 2;
+}
+
+.box .is-divider[data-content]::after {
+  background-color: #fff;
+}
+
+.is-divider[data-content]::after {
+  background-color: #fafafa;
+}
+
+.vertheader {
+  writing-mode: sideways-lr;
+  width: 20px;
+}
+
+tr.no-bottom-border td {
+  border-bottom: 0px;
 }

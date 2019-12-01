@@ -1,16 +1,14 @@
 module Page.Events.Attendees exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, section, span, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Error exposing (GreaseResult)
+import Html exposing (Html, br, div, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, colspan, href, id, placeholder, src, style)
 import Http
-import Json.Decode as Decode exposing (field, string)
-import List.Extra exposing (groupWhile)
+import Json.Decode as Decode
 import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
-import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), getRequest, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
 
 
 
@@ -32,17 +30,14 @@ init common eventId =
 
 
 type Msg
-    = OnLoadAttendees (Result Http.Error (List EventAttendee))
+    = OnLoadAttendees (GreaseResult (List EventAttendee))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadAttendees (Ok attendees) ->
-            ( { attendees = Loaded attendees }, Cmd.none )
-
-        OnLoadAttendees (Err error) ->
-            ( { attendees = Failure }, Cmd.none )
+        OnLoadAttendees attendeesResult ->
+            ( { attendees = resultToRemote attendeesResult }, Cmd.none )
 
 
 
@@ -55,36 +50,13 @@ loadAttendees common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/see_whos_attending"
     in
-    getRequest common url (Http.expectJson OnLoadAttendees <| Decode.list eventAttendeeDecoder)
+    getRequest common url (Decode.list eventAttendeeDecoder)
+        |> Task.attempt OnLoadAttendees
 
 
-organizeAttendees : List EventAttendee -> List ( String, List EventAttendee )
-organizeAttendees attendees =
-    let
-        sortAttendees =
-            List.sortBy (\attendee -> attendee.member.section |> Maybe.withDefault "")
-
-        groupedAttendees =
-            attendees
-                |> sortAttendees
-                |> groupWhile (\attendeeA attendeeB -> attendeeA.member.section == attendeeB.member.section)
-
-        buildSection attendeeSection =
-            let
-                allInSection =
-                    [ Tuple.first attendeeSection ] ++ Tuple.second attendeeSection
-
-                sectionName =
-                    (Tuple.first attendeeSection).member.section |> Maybe.withDefault "Unsorted"
-            in
-            ( sectionName, sortAttendees allInSection )
-    in
-    groupedAttendees
-        |> List.map buildSection
-        |> List.sortBy (\section -> Tuple.first section)
-
-
-separateAttendees : List EventAttendee -> ( ( List EventAttendee, List EventAttendee ), ( List EventAttendee, List EventAttendee ) )
+separateAttendees :
+    List EventAttendee
+    -> ( ( List EventAttendee, List EventAttendee ), ( List EventAttendee, List EventAttendee ) )
 separateAttendees attendees =
     let
         ( attending, notAttending ) =
@@ -102,22 +74,8 @@ separateAttendees attendees =
 
 view : Model -> Html Msg
 view model =
-    let
-        content =
-            case model.attendees of
-                NotAsked ->
-                    text ""
-
-                Loading ->
-                    spinner
-
-                Loaded attendees ->
-                    attendeeTables attendees
-
-                Failure ->
-                    text "error"
-    in
-    div [ id "attendees" ] [ content ]
+    div [ id "attendees" ]
+        [ model.attendees |> Basics.remoteContent attendeeTables ]
 
 
 attendeeTables : List EventAttendee -> Html Msg

@@ -1,8 +1,9 @@
-module Page.Events.RequestAbsence exposing (Model, Msg(..), init, submitAbsenceRequest, switchToDetailsTab, update, view)
+module Page.Events.RequestAbsence exposing (requestAbsence)
 
-import Html exposing (Html, a, button, div, form, h1, img, label, section, table, tbody, td, text, textarea, thead, tr)
-import Html.Attributes exposing (class, href, id, placeholder, src, type_, value)
-import Html.Events exposing (onClick, onSubmit)
+import Components.Basics as Basics
+import Html exposing (Html, a, br, button, div, form, h1, h2, img, label, section, table, tbody, td, text, textarea, thead, tr)
+import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Encode as Encode
 import Maybe.Extra
@@ -12,92 +13,36 @@ import Time exposing (Posix)
 import Utils exposing (Common, alert, apiUrl, postRequest)
 
 
-
----- MODEL ----
-
-
-type alias Model =
-    { common : Common
-    , eventId : Int
-    , reason : String
+type alias RequestAbsence msg =
+    { reason : String
+    , event : FullEvent
+    , updateReason : String -> msg
+    , submit : msg
+    , cancel : msg
     }
 
 
-init : Common -> Int -> ( Model, Cmd Msg )
-init common eventId =
-    ( { common = common, eventId = eventId, reason = "" }, Cmd.none )
-
-
-
----- UPDATE ----
-
-
-type Msg
-    = InputReason String
-    | Submit
-    | SwitchToDetailsTab
-    | OnSubmit (Result Http.Error ())
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        InputReason reason ->
-            ( { model | reason = reason }, Cmd.none )
-
-        Submit ->
-            ( model, submitAbsenceRequest model )
-
-        SwitchToDetailsTab ->
-            ( model, switchToDetailsTab model )
-
-        OnSubmit (Ok _) ->
-            ( model, Cmd.batch [ switchToDetailsTab model, alert "Your request has been submitted. You lazy bum!" ] )
-
-        OnSubmit (Err _) ->
-            ( model, alert "We messed up submitting your request. Please be gentle..." )
-
-
-
----- DATA ----
-
-
-switchToDetailsTab : Model -> Cmd Msg
-switchToDetailsTab model =
-    Route.loadPage <| Route.Events { id = Just model.eventId, tab = Just Route.EventRequestAbsence }
-
-
-submitAbsenceRequest : Model -> Cmd Msg
-submitAbsenceRequest model =
-    let
-        url =
-            "/absence_requests/" ++ String.fromInt model.eventId
-
-        body =
-            Http.jsonBody <| Encode.object [ ( "reason", Encode.string model.reason ) ]
-    in
-    postRequest model.common url body <| Http.expectWhatever OnSubmit
-
-
-
----- VIEW ----
-
-
-view model =
-    form [ id "absence-request", onSubmit Submit ]
-        [ div [ class "field" ]
-            [ label [ class "label" ] [ text "Reason" ]
-            , div [ class "control" ]
-                [ textarea
-                    [ class "textarea"
-                    , value model.reason
-                    , placeholder "My dog ate my homework."
+requestAbsence : RequestAbsence msg -> Html msg
+requestAbsence data =
+    div []
+        [ Basics.backTextButton "back to event" data.cancel
+        , h1 [ class "title", style "text-align" "center" ] [ text "Absence Request" ]
+        , h2 [ class "subtitle", style "text-align" "center" ] [ text <| "for " ++ data.event.name ]
+        , br [] []
+        , form [ id "absence-request", onSubmit data.submit ]
+            [ div [ class "field" ]
+                [ label [ class "label" ] [ text "But y tho" ]
+                , div [ class "control" ]
+                    [ textarea
+                        [ class "textarea"
+                        , value data.reason
+                        , onInput data.updateReason
+                        , placeholder "Excuses, excuses"
+                        ]
+                        []
                     ]
-                    []
                 ]
+            , button [ type_ "submit", class "button is-primary is-right" ]
+                [ text "Beg for Mercy" ]
             ]
-        , button [ type_ "button", class "button", onClick SwitchToDetailsTab ]
-            [ text "jk nvm" ]
-        , button [ type_ "submit", class "button is-primary" ]
-            [ text "Beg for Mercy" ]
         ]

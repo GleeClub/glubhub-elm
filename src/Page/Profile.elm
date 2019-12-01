@@ -1,6 +1,8 @@
 module Page.Profile exposing (Model, Msg(..), init, update, view)
 
+import Browser.Navigation exposing (reload)
 import Components.Basics as Basics
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, br, button, div, img, section, text)
 import Html.Attributes exposing (class, href, id, src, type_)
 import Html.Events exposing (onClick)
@@ -10,7 +12,8 @@ import List.Extra
 import Maybe.Extra exposing (isJust)
 import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), formatPhone, getRequest, setToken, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), formatPhone, getRequest, setToken)
 
 
 
@@ -38,7 +41,7 @@ init common email =
 
 
 type Msg
-    = OnLoadMember (Result Http.Error Member)
+    = OnLoadMember (GreaseResult Member)
     | Logout
 
 
@@ -48,11 +51,11 @@ update msg model =
         OnLoadMember (Ok member) ->
             ( { model | member = Loaded member }, Cmd.none )
 
-        OnLoadMember (Err _) ->
-            ( { model | member = Failure }, Cmd.none )
+        OnLoadMember (Err error) ->
+            ( { model | member = Failure error }, Cmd.none )
 
         Logout ->
-            ( model, Cmd.batch [ setToken Nothing, Route.loadPage Route.Login ] )
+            ( model, Cmd.batch [ setToken Nothing, reload ] )
 
 
 
@@ -61,7 +64,7 @@ update msg model =
 
 loadMember : Common -> String -> Cmd Msg
 loadMember common email =
-    getRequest common ("/members/" ++ email) (Http.expectJson OnLoadMember memberDecoder)
+    getRequest common ("/members/" ++ email) memberDecoder |> Task.attempt OnLoadMember
 
 
 
@@ -71,37 +74,33 @@ loadMember common email =
 view : Model -> Html Msg
 view model =
     let
-        content =
-            case model.member of
-                NotAsked ->
-                    text ""
-
-                Loading ->
-                    spinner
-
-                Loaded member ->
-                    viewProfile member (model.common.user |> Maybe.map (\u -> u.email == member.email) |> Maybe.withDefault False)
-
-                Failure ->
-                    text "Whoops..."
+        viewMember member =
+            member
+                |> viewProfile
+                    (model.common.user
+                        |> Maybe.map (\u -> u.email == member.email)
+                        |> Maybe.withDefault False
+                    )
     in
-    div [ id "home" ]
-        [ section [ class "section" ]
-            [ div [ class "container" ]
-                [ div [ class "box" ] [ content ] ]
+    section [ class "section" ]
+        [ div [ class "container" ]
+            [ div [ class "box" ]
+                [ model.member
+                    |> Basics.remoteContent viewMember
+                ]
             ]
         ]
 
 
-viewProfile : Member -> Bool -> Html Msg
-viewProfile member isCurrentUser =
+viewProfile : Bool -> Member -> Html Msg
+viewProfile isCurrentUser member =
     let
         officership =
-            if List.length member.positions > 0 then
-                String.join ", " member.positions
+            if List.isEmpty member.positions then
+                "Not an officer"
 
             else
-                "Not an officer"
+                String.join ", " member.positions
 
         driverStatus =
             if member.passengers > 0 then

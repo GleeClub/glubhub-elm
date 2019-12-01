@@ -1,4 +1,4 @@
-module Models.Song exposing (Pitch(..), Song, SongLink, SongLinkSection, SongMode(..), pitchDecoder, pitchToString, songDecoder, songLinkDecoder, songLinkSectionDecoder, songModeDecoder, songModeToString)
+module Models.Song exposing (Accidental(..), BasePitch(..), Pitch, Song, SongLink, SongLinkSection, SongMode(..), halfStepsAboveA, pitchDecoder, pitchToString, songDecoder, songLinkDecoder, songLinkSectionDecoder, songModeDecoder, songModeToString)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
@@ -93,28 +93,26 @@ songModeDecoder =
             )
 
 
-type Pitch
-    = AFlat
-    | A
-    | ASharp
-    | BFlat
+type BasePitch
+    = A
     | B
-    | BSharp
-    | CFlat
     | C
-    | CSharp
-    | DFlat
     | D
-    | DSharp
-    | EFlat
     | E
-    | ESharp
-    | FFlat
     | F
-    | FSharp
-    | GFlat
     | G
-    | GSharp
+
+
+type Accidental
+    = Natural
+    | Flat
+    | Sharp
+
+
+type alias Pitch =
+    { base : BasePitch
+    , accidental : Accidental
+    }
 
 
 pitchDecoder : Decoder Pitch
@@ -122,137 +120,126 @@ pitchDecoder =
     string
         |> Decode.andThen
             (\pitch ->
-                case pitch of
-                    "A♭" ->
-                        Decode.succeed AFlat
+                let
+                    base =
+                        case pitch |> String.slice 0 1 of
+                            "A" ->
+                                Decode.succeed A
 
-                    "A" ->
-                        Decode.succeed A
+                            "B" ->
+                                Decode.succeed B
 
-                    "A♯" ->
-                        Decode.succeed ASharp
+                            "C" ->
+                                Decode.succeed C
 
-                    "B♭" ->
-                        Decode.succeed BFlat
+                            "D" ->
+                                Decode.succeed D
 
-                    "B" ->
-                        Decode.succeed B
+                            "E" ->
+                                Decode.succeed E
 
-                    "B♯" ->
-                        Decode.succeed BSharp
+                            "F" ->
+                                Decode.succeed F
 
-                    "C♭" ->
-                        Decode.succeed CFlat
+                            "G" ->
+                                Decode.succeed G
 
-                    "C" ->
-                        Decode.succeed C
+                            _ ->
+                                Decode.fail "invalid pitch"
 
-                    "C♯" ->
-                        Decode.succeed CSharp
+                    accidental =
+                        case pitch |> String.slice 1 2 of
+                            "" ->
+                                Decode.succeed Natural
 
-                    "D♭" ->
-                        Decode.succeed DFlat
+                            "♭" ->
+                                Decode.succeed Flat
 
-                    "D" ->
-                        Decode.succeed D
+                            "♯" ->
+                                Decode.succeed Sharp
 
-                    "D♯" ->
-                        Decode.succeed DSharp
-
-                    "E♭" ->
-                        Decode.succeed EFlat
-
-                    "E" ->
-                        Decode.succeed E
-
-                    "E♯" ->
-                        Decode.succeed ESharp
-
-                    "F♭" ->
-                        Decode.succeed FFlat
-
-                    "F" ->
-                        Decode.succeed F
-
-                    "F♯" ->
-                        Decode.succeed FSharp
-
-                    "G♭" ->
-                        Decode.succeed GFlat
-
-                    "G" ->
-                        Decode.succeed G
-
-                    "G♯" ->
-                        Decode.succeed GSharp
-
-                    other ->
-                        Decode.fail "SongMode can only be valid keys"
+                            _ ->
+                                Decode.fail "invalid accidental"
+                in
+                Decode.map2 Pitch base accidental
             )
 
 
 pitchToString : Pitch -> String
 pitchToString pitch =
-    case pitch of
-        AFlat ->
-            "A♭"
+    let
+        base =
+            case pitch.base of
+                A ->
+                    "A"
 
-        A ->
-            "A"
+                B ->
+                    "B"
 
-        ASharp ->
-            "A♯"
+                C ->
+                    "C"
 
-        BFlat ->
-            "B♭"
+                D ->
+                    "D"
 
-        B ->
-            "B"
+                E ->
+                    "E"
 
-        BSharp ->
-            "B♯"
+                F ->
+                    "F"
 
-        CFlat ->
-            "C♭"
+                G ->
+                    "G"
 
-        C ->
-            "C"
+        accidental =
+            case pitch.accidental of
+                Natural ->
+                    ""
 
-        CSharp ->
-            "C♯"
+                Flat ->
+                    "♭"
 
-        DFlat ->
-            "D♭"
+                Sharp ->
+                    "♯"
+    in
+    base ++ accidental
 
-        D ->
-            "D"
 
-        DSharp ->
-            "D♯"
+halfStepsAboveA : Pitch -> Int
+halfStepsAboveA pitch =
+    let
+        base =
+            case pitch.base of
+                A ->
+                    0
 
-        EFlat ->
-            "E♭"
+                B ->
+                    2
 
-        E ->
-            "E"
+                C ->
+                    3
 
-        ESharp ->
-            "E♯"
+                D ->
+                    5
 
-        FFlat ->
-            "F♭"
+                E ->
+                    7
 
-        F ->
-            "F"
+                F ->
+                    8
 
-        FSharp ->
-            "F♯"
+                G ->
+                    10
 
-        GFlat ->
-            "G♭"
+        accidental =
+            case pitch.accidental of
+                Natural ->
+                    0
 
-        G ->
-            "G"
+                Flat ->
+                    -1
 
-        GSharp ->
-            "G♯"
+                Sharp ->
+                    1
+    in
+    (base + accidental) |> modBy 12

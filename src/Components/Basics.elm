@@ -1,9 +1,28 @@
-module Components.Basics exposing (HorizontalField, box, checkOrCross, column, columns, horizontalField, linkButton, narrowColumn, title, tooltip)
+module Components.Basics exposing (HorizontalField, Sidebar, attendanceIcon, backTextButton, box, checkOrCross, column, columns, divider, errorBox, horizontalField, linkButton, multilineTooltip, narrowColumn, notFoundView, remoteContent, remoteContentFull, sidebar, spinner, submissionStateBox, title, tooltip)
 
-import Html exposing (Html, a, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, tfoot, thead, tr)
+import Error exposing (GreaseError(..))
+import Html exposing (Html, a, article, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, tfoot, thead, tr)
 import Html.Attributes exposing (attribute, class, href, id, name, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput)
+import Models.Event exposing (HasAttendance, IsEvent)
 import Route exposing (Route)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver)
+
+
+spinner : Html a
+spinner =
+    div [ class "spinner" ]
+        [ div [ class "spinner-inner" ]
+            [ i [ class "oldgold-text fas fa-circle-notch fa-2x fa-spin" ] []
+            ]
+        ]
+
+
+notFoundView : Html a
+notFoundView =
+    div []
+        [ text "Not found"
+        ]
 
 
 title : String -> Html msg
@@ -31,9 +50,18 @@ box content =
     div [ class "box" ] content
 
 
-tooltip : String -> Html.Attribute msg
+tooltip : String -> List (Html.Attribute msg)
 tooltip content =
-    attribute "data-tooltip" content
+    [ class "tooltip is-tooltip"
+    , style "cursor" "pointer"
+    , attribute "data-tooltip" content
+    , style "z-index" "200"
+    ]
+
+
+multilineTooltip : String -> List (Html.Attribute msg)
+multilineTooltip content =
+    class "is-tooltip-multiline" :: tooltip content
 
 
 checkOrCross : Bool -> Html msg
@@ -50,6 +78,31 @@ checkOrCross isCheck =
                        )
             ]
             []
+        ]
+
+
+divider : String -> Html msg
+divider content =
+    div [ class "is-divider", attribute "data-content" content ] []
+
+
+backTextButton : String -> msg -> Html msg
+backTextButton content backMsg =
+    span
+        [ style "display" "inline-block"
+        , style "vertical-align" "middle"
+        , style "cursor" "pointer"
+        , onClick backMsg
+        ]
+        [ i
+            [ style "display" "inline-block"
+            , style "vertical-align" "middle"
+            , class "fas fa-angle-left"
+            , style "font-size" "30px"
+            ]
+            []
+        , text " "
+        , span [ style "display" "inline-block", style "vertical-align" "middle" ] [ text content ]
         ]
 
 
@@ -85,3 +138,162 @@ horizontalField field =
                 []
             ]
         ]
+
+
+attendanceIcon : Common -> IsEvent a -> Maybe (HasAttendance b) -> Html msg
+attendanceIcon common event attendance =
+    let
+        didAttend =
+            attendance |> Maybe.map .didAttend |> Maybe.withDefault False
+
+        shouldAttend =
+            attendance |> Maybe.map .shouldAttend |> Maybe.withDefault False
+
+        confirmed =
+            attendance |> Maybe.map .confirmed |> Maybe.withDefault False
+
+        ( wrapping, color, success ) =
+            if eventIsOver common.now event then
+                if didAttend || not shouldAttend then
+                    ( [ style "white-space" "nowrap" ], "has-text-success", didAttend )
+
+                else
+                    ( [ style "white-space" "nowrap" ], "has-text-danger", didAttend )
+
+            else if confirmed then
+                ( [], "has-text-success", shouldAttend )
+
+            else
+                ( [], "has-text-grey", shouldAttend )
+    in
+    div (class color :: wrapping) [ checkOrCross success ]
+
+
+remoteContentFull : Html msg -> (a -> Html msg) -> RemoteData a -> Html msg
+remoteContentFull notAskedContent render remoteData =
+    case remoteData of
+        NotAsked ->
+            notAskedContent
+
+        Loading ->
+            spinner
+
+        Loaded data ->
+            render data
+
+        Failure err ->
+            errorBox err
+
+
+remoteContent : (a -> Html msg) -> RemoteData a -> Html msg
+remoteContent =
+    remoteContentFull (text "")
+
+
+type alias Sidebar a msg =
+    { render : a -> Html msg
+    , data : RemoteData a
+    , close : msg
+    }
+
+
+sidebar : Sidebar a msg -> Html msg
+sidebar data =
+    let
+        emptySidebar =
+            div [ class "sidenav hidden", style "width" "0%" ] []
+
+        overlay =
+            div [ class "transparent-overlay", onClick data.close ] []
+
+        sidebarDiv =
+            div
+                [ class "sidenav"
+                , style "width" "40%"
+                , style "padding" "20px"
+                , style "padding-top" "80px"
+                ]
+    in
+    div [] <|
+        case data.data of
+            NotAsked ->
+                [ emptySidebar ]
+
+            Loading ->
+                [ overlay, sidebarDiv [ spinner ] ]
+
+            Loaded loaded ->
+                [ overlay, sidebarDiv [ data.render loaded ] ]
+
+            Failure err ->
+                [ overlay, sidebarDiv [ errorBox err ] ]
+
+
+errorBox : GreaseError -> Html msg
+errorBox error =
+    let
+        ( errorTitle, content ) =
+            case error of
+                Unauthorized ->
+                    ( "unauthorized", "You aren't allowed to be here! Go on, get!" )
+
+                NotActiveYet member ->
+                    ( "not active yet", "You're gonna need to confirm your account for the semester to do stuff." )
+
+                AlreadyLoggedIn token ->
+                    ( "already logged in", "You tried to login twice, dummy. No need to work so hard." )
+
+                Forbidden requiredPermission ->
+                    ( requiredPermission
+                        |> Maybe.map (\p -> "unable to " ++ p)
+                        |> Maybe.withDefault "forbidden"
+                    , "Well, well, well, looks like you tried to do something you weren't allowed to. Go to your room!"
+                    )
+
+                NotFound ->
+                    ( "resource not found", "I've looked everywhere, but I can't find what you're looking for..." )
+
+                BadRequest reason ->
+                    ( "bad request", "I've got some bad news for ya: " ++ reason )
+
+                ServerError err ->
+                    ( "server error", "Oh lordy, something terrible has come to pass: " ++ err )
+
+                DatabaseError err ->
+                    ( "database error", "Don't shoot the messenger, but this came in from headquarters: " ++ err )
+
+                FromRowError err ->
+                    ( "from row error", "Blame my friend the database, for they have broken something: " ++ err )
+
+                UnknownError ( status, err ) ->
+                    ( "unknown error"
+                        ++ (status
+                                |> Maybe.map (\s -> " (status " ++ String.fromInt s ++ ")")
+                                |> Maybe.withDefault ""
+                           )
+                    , "I don't even know what happened: " ++ err
+                    )
+    in
+    article [ class "message is-danger" ]
+        [ div [ class "message-header" ]
+            [ p []
+                [ text "Something went wrong. ("
+                , i [] [ text errorTitle ]
+                , text ")"
+                ]
+            ]
+        , div [ class "message-body" ] [ text content ]
+        ]
+
+
+submissionStateBox : SubmissionState -> Html msg
+submissionStateBox state =
+    case state of
+        NotSentYet ->
+            text ""
+
+        Sending ->
+            spinner
+
+        ErrorSending error ->
+            errorBox error

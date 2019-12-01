@@ -1,13 +1,16 @@
 module Page.Events.Carpools exposing (Model, Msg(..), init, update, view)
 
-import Html exposing (Html, b, a, br, div, li, text, ul)
-import Html.Attributes exposing (class, id)
+import Components.Basics as Basics
+import Error exposing (GreaseResult)
+import Html exposing (Html, a, b, br, div, li, text, ul)
+import Html.Attributes exposing (class, id, style)
 import Http
 import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), permittedTo, getRequest, spinner)
-import Components.Basics as Basics
+import Task
+import Utils exposing (Common, RemoteData(..), getRequest, permittedTo, resultToRemote)
+
 
 
 ---- MODEL ----
@@ -35,17 +38,14 @@ canEditCarpools =
 
 
 type Msg
-    = OnLoadCarpools (Result Http.Error (List EventCarpool))
+    = OnLoadCarpools (GreaseResult (List EventCarpool))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadCarpools (Ok carpools) ->
-            ( { model | carpools = Loaded carpools }, Cmd.none )
-
-        OnLoadCarpools (Err _) ->
-            ( { model | carpools = Failure }, Cmd.none )
+        OnLoadCarpools carpoolsResult ->
+            ( { model | carpools = resultToRemote carpoolsResult }, Cmd.none )
 
 
 
@@ -58,7 +58,8 @@ loadCarpools common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/carpools"
     in
-    getRequest common url (Http.expectJson OnLoadCarpools <| Decode.list eventCarpoolDecoder)
+    getRequest common url (Decode.list eventCarpoolDecoder)
+        |> Task.attempt OnLoadCarpools
 
 
 
@@ -68,30 +69,26 @@ loadCarpools common eventId =
 view : Model -> Html Msg
 view model =
     let
+        ableToEditCarpools =
+            model.common.user
+                |> Maybe.map (permittedTo canEditCarpools)
+                |> Maybe.withDefault False
+
         maybeEditButton =
-            if model.common.user |> Maybe.map (permittedTo canEditCarpools) |> Maybe.withDefault False then
+            if ableToEditCarpools then
                 Basics.linkButton "Edit Carpools" (Route.EditCarpools model.eventId)
+
             else
                 text ""
 
-        content =
-            case model.carpools of
-                NotAsked ->
-                    text ""
-
-                Loading ->
-                    spinner
-
-                Loaded carpools ->
-                    div []
-                        [ carpoolList carpools
-                        , maybeEditButton
-                        ]
-
-                Failure ->
-                    text "whoops"
+        render carpools =
+            div []
+                [ carpoolList carpools
+                , div [ style "padding" "10px" ]
+                    [ maybeEditButton ]
+                ]
     in
-    div [ id "carpools" ] [ content ]
+    model.carpools |> Basics.remoteContent render
 
 
 carpoolList : List EventCarpool -> Html Msg
@@ -113,7 +110,7 @@ singleCarpool carpool =
             li [] [ text <| passenger.fullName ]
 
         passengerBlock =
-            if List.length passengers == 0 then
+            if List.isEmpty passengers then
                 b [] [ text "themself", br [] [] ]
 
             else

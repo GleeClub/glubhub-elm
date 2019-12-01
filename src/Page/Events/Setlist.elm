@@ -1,12 +1,15 @@
-module Page.Events.Setlist exposing (Model, Msg(..), init, loadSetlist, update, view, viewSongRow, viewSongTable)
+module Page.Events.Setlist exposing (Model, Msg(..), init, update, view)
 
+import Components.Basics as Basics
+import Error exposing (GreaseResult)
 import Html exposing (Html, div, table, tbody, td, text, tr)
 import Html.Attributes exposing (class, id)
 import Http
 import Json.Decode as Decode
 import Models.Song exposing (Song, pitchToString, songDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), getRequest, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
 
 
 
@@ -28,17 +31,14 @@ init common eventId =
 
 
 type Msg
-    = OnLoadSetlist (Result Http.Error (List Song))
+    = OnLoadSetlist (GreaseResult (List Song))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadSetlist (Ok songs) ->
-            ( { model | songs = Loaded songs }, Cmd.none )
-
-        OnLoadSetlist (Err _) ->
-            ( { model | songs = Failure }, Cmd.none )
+        OnLoadSetlist songsResult ->
+            ( { model | songs = resultToRemote songsResult }, Cmd.none )
 
 
 
@@ -51,7 +51,8 @@ loadSetlist common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/setlist"
     in
-    getRequest common url (Http.expectJson OnLoadSetlist <| Decode.list songDecoder)
+    getRequest common url (Decode.list songDecoder)
+        |> Task.attempt OnLoadSetlist
 
 
 
@@ -60,22 +61,8 @@ loadSetlist common eventId =
 
 view : Model -> Html Msg
 view model =
-    let
-        content =
-            case model.songs of
-                NotAsked ->
-                    text ""
-
-                Loading ->
-                    spinner
-
-                Loaded songs ->
-                    viewSongTable songs
-
-                Failure ->
-                    text "whoops"
-    in
-    div [ id "setlist" ] [ content ]
+    div [ id "setlist" ]
+        [ model.songs |> Basics.remoteContent viewSongTable ]
 
 
 viewSongTable : List Song -> Html Msg
@@ -84,7 +71,7 @@ viewSongTable songs =
         div [] [ text "No set list for this event." ]
 
     else
-        table [ class "table is-fullwidth is-striped" ]
+        table [ class "table is-striped" ]
             [ tbody [] (songs |> List.indexedMap viewSongRow) ]
 
 

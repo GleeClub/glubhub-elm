@@ -1,7 +1,8 @@
-module Page.Login exposing (LoginRequestState(..), Model, Msg(..), init, update, view)
+module Page.Login exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Error exposing (GreaseError(..), GreaseResult, parseResponse)
 import Html exposing (Html, a, button, div, form, h1, img, input, label, section, span, text)
 import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -12,7 +13,8 @@ import Json.Encode as Encode
 import MD5
 import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, notFoundView, setToken, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, apiUrl, setToken)
 
 
 
@@ -22,14 +24,8 @@ import Utils exposing (Common, RemoteData(..), alert, apiUrl, notFoundView, setT
 type alias Model =
     { email : String
     , password : String
-    , state : LoginRequestState
+    , state : SubmissionState
     }
-
-
-type LoginRequestState
-    = NotSentYet
-    | Sending
-    | Error String
 
 
 init : ( Model, Cmd Msg )
@@ -50,7 +46,7 @@ type Msg
     = UpdateEmail String
     | UpdatePassword String
     | Submit
-    | OnSubmitLogin (Result (Http.Detailed.Error String) ( Metadata, String ))
+    | OnSubmitLogin (GreaseResult String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -65,21 +61,18 @@ update msg model =
         Submit ->
             ( { model | state = Sending }, submitLogin model )
 
-        OnSubmitLogin (Ok ( _, token )) ->
+        OnSubmitLogin (Ok token) ->
             ( model, onSuccessfulLogin token )
 
         OnSubmitLogin (Err error) ->
             case error of
-                BadStatus _ body ->
-                    case body |> Decode.decodeString (field "token" string) of
-                        Ok token ->
-                            ( model, onSuccessfulLogin token )
+                AlreadyLoggedIn token ->
+                    ( model, onSuccessfulLogin token )
 
-                        Err _ ->
-                            ( { model | state = Error "an error occurred" }, alert body )
-
-                _ ->
-                    ( { model | state = Error "an error occurred" }, Cmd.none )
+                otherError ->
+                    ( { model | state = ErrorSending otherError }
+                    , alert "Your username and/or password were incorrect."
+                    )
 
 
 
@@ -92,30 +85,28 @@ submitLogin model =
         passHash =
             MD5.hex model.password
 
-        body =
-            Http.jsonBody <|
-                Encode.object
-                    [ ( "email", Encode.string model.email )
-                    , ( "passHash", Encode.string passHash )
-                    ]
+        loginJson =
+            Encode.object
+                [ ( "email", Encode.string model.email )
+                , ( "passHash", Encode.string passHash )
+                ]
+
+        task =
+            Http.task
+                { method = "POST"
+                , url = apiUrl ++ "/login"
+                , body = Http.jsonBody loginJson
+                , headers = []
+                , resolver = Http.stringResolver <| parseResponse (field "token" string)
+                , timeout = Nothing
+                }
     in
-    Http.request
-        { method = "POST"
-        , url = apiUrl ++ "/login"
-        , body = body
-        , headers = []
-        , expect = Http.Detailed.expectJson OnSubmitLogin (field "token" string)
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    task |> Task.attempt OnSubmitLogin
 
 
 onSuccessfulLogin : String -> Cmd Msg
 onSuccessfulLogin token =
-    Cmd.batch
-        [ setToken (Just token)
-        , Route.loadPage Route.Home
-        ]
+    Cmd.batch [ setToken (Just token), Nav.reload ]
 
 
 

@@ -2,6 +2,7 @@ module Page.EditProfile exposing (Model, Msg(..), ProfileForm, actionButtons, de
 
 import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, button, div, form, h1, h3, h4, img, input, label, option, p, section, select, span, text)
 import Html.Attributes exposing (checked, class, disabled, for, href, id, name, placeholder, src, style, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -13,7 +14,8 @@ import Maybe.Extra exposing (isJust, isNothing)
 import Models.Event exposing (Member, memberDecoder)
 import Models.Info exposing (Enrollment(..), enrollmentToString)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, notFoundView, postRequest, setToken, spinner)
+import Task
+import Utils exposing (Common, RemoteData(..), alert, apiUrl, postRequest, setToken)
 
 
 
@@ -140,7 +142,7 @@ type Msg
     | EditConflicts String
     | EditDietaryRestrictions String
     | Submit
-    | OnSubmit (Result Http.Error ())
+    | OnSubmit (GreaseResult ())
     | BackToLogin
 
 
@@ -266,12 +268,14 @@ submit model =
 
 updateMemberProfile : Encode.Value -> Common -> Cmd Msg
 updateMemberProfile profile common =
-    postRequest common "/members/profile" (Http.jsonBody profile) (Http.expectWhatever OnSubmit)
+    postRequest common "/members/profile" profile
+        |> Task.attempt OnSubmit
 
 
 registerNewMember : Encode.Value -> Common -> Cmd Msg
 registerNewMember profile common =
-    postRequest common "/members" (Http.jsonBody profile) (Http.expectWhatever OnSubmit)
+    postRequest common "/members" profile
+        |> Task.attempt OnSubmit
 
 
 serializeProfile : ProfileForm -> Maybe String -> Encode.Value

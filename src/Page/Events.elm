@@ -2,23 +2,26 @@ module Page.Events exposing (FullEventTab(..), Model, Msg(..), init, update, vie
 
 import Components.Basics as Basics
 import Components.SelectableList exposing (..)
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, div, h1, i, img, li, p, section, span, table, tbody, td, text, tfoot, thead, tr, ul)
-import Html.Attributes exposing (class, href, id, src, style)
+import Html.Attributes exposing (attribute, class, href, id, src, style)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
 import Json.Decode.Pipeline exposing (custom)
+import Json.Encode as Encode
 import List.Extra exposing (find)
 import Maybe.Extra exposing (filter, isJust, isNothing)
 import Models.Event exposing (FullEvent, fullEventDecoder)
 import Page.Events.Attendees as Attendees
 import Page.Events.Carpools as Carpools
 import Page.Events.Details as Details
-import Page.Events.RequestAbsence as RequestAbsence
+import Page.Events.RequestAbsence exposing (requestAbsence)
 import Page.Events.Setlist as Setlist
 import Route exposing (EventRoute, EventTab(..), Route)
+import Task
 import Time exposing (Posix)
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, eventIsOver, getRequest, simpleDateFormatter, spinner)
+import Utils exposing (Common, RemoteData(..), alert, eventIsOver, getRequest, postRequest, remoteToMaybe, simpleDateFormatter)
 
 
 
@@ -37,7 +40,7 @@ type FullEventTab
     | FullEventAttendees Attendees.Model
     | FullEventSetlist Setlist.Model
     | FullEventCarpools Carpools.Model
-    | FullEventRequestAbsence RequestAbsence.Model
+    | FullEventRequestAbsence String
 
 
 init : Common -> EventRoute -> ( Model, Cmd Msg )
@@ -55,21 +58,23 @@ init common route =
 
 
 type Msg
-    = OnLoadEvents (Result Http.Error ( List FullEvent, EventRoute ))
+    = OnLoadEvents (GreaseResult ( List FullEvent, EventRoute ))
     | SelectEvent FullEvent
     | UnselectEvent
+    | RequestAbsence
+    | UpdateAbsenceRequest String
+    | OnRequestAbsence (GreaseResult ())
     | ChangeTab EventTab
     | DetailsMsg Details.Msg
     | SetlistMsg Setlist.Msg
     | CarpoolsMsg Carpools.Msg
     | AttendeesMsg Attendees.Msg
-    | RequestAbsenceMsg RequestAbsence.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        OnLoadEvents (Ok ( allEvents, route )) ->
+    case ( msg, model.selected ) of
+        ( OnLoadEvents (Ok ( allEvents, route )), _ ) ->
             let
                 newModel =
                     { model | events = Loaded (List.reverse allEvents) }
@@ -81,16 +86,16 @@ update msg model =
                 Nothing ->
                     ( newModel, Cmd.none )
 
-        OnLoadEvents (Err error) ->
-            ( { model | events = Failure }, Cmd.none )
+        ( OnLoadEvents (Err error), _ ) ->
+            ( { model | events = Failure error }, Cmd.none )
 
-        UnselectEvent ->
+        ( UnselectEvent, _ ) ->
             ( { model | selected = NotAsked }, Route.replaceUrl model.common.key <| Route.Events { id = Nothing, tab = Nothing } )
 
-        SelectEvent event ->
+        ( SelectEvent event, _ ) ->
             changeTab event EventDetails model
 
-        ChangeTab tab ->
+        ( ChangeTab tab, _ ) ->
             case model.selected of
                 Loaded ( event, eventTab ) ->
                     changeTab event tab model
@@ -98,25 +103,61 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        _ ->
-            case ( msg, model.selected ) of
-                ( DetailsMsg tabMsg, Loaded ( event, FullEventDetails tabModel ) ) ->
-                    Details.update tabMsg tabModel |> updateWith event FullEventDetails DetailsMsg model
+        ( RequestAbsence, Loaded ( event, FullEventRequestAbsence reason ) ) ->
+            ( model, submitAbsenceRequest model.common reason event.id )
 
-                ( AttendeesMsg tabMsg, Loaded ( event, FullEventAttendees tabModel ) ) ->
-                    Attendees.update tabMsg tabModel |> updateWith event FullEventAttendees AttendeesMsg model
+        ( RequestAbsence, _ ) ->
+            ( model, Cmd.none )
 
-                ( SetlistMsg tabMsg, Loaded ( event, FullEventSetlist tabModel ) ) ->
-                    Setlist.update tabMsg tabModel |> updateWith event FullEventSetlist SetlistMsg model
+        ( OnRequestAbsence (Ok _), _ ) ->
+            case model.selected of
+                Loaded ( event, tab ) ->
+                    let
+                        ( newModel, newCmd ) =
+                            changeTab event EventDetails model
+                    in
+                    ( newModel
+                    , Cmd.batch
+                        [ newCmd
+                        , alert "Your request has been submitted. You lazy bum!"
+                        ]
+                    )
 
-                ( CarpoolsMsg tabMsg, Loaded ( event, FullEventCarpools tabModel ) ) ->
-                    Carpools.update tabMsg tabModel |> updateWith event FullEventCarpools CarpoolsMsg model
-
-                ( RequestAbsenceMsg tabMsg, Loaded ( event, FullEventRequestAbsence tabModel ) ) ->
-                    RequestAbsence.update tabMsg tabModel |> updateWith event FullEventRequestAbsence RequestAbsenceMsg model
-
-                ( _, _ ) ->
+                _ ->
                     ( model, Cmd.none )
+
+        ( OnRequestAbsence (Err _), _ ) ->
+            ( model, alert "We messed up submitting your request. Please be gentle..." )
+
+        ( DetailsMsg tabMsg, Loaded ( event, FullEventDetails tabModel ) ) ->
+            Details.update tabMsg tabModel |> updateWith event FullEventDetails DetailsMsg model
+
+        ( DetailsMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( AttendeesMsg tabMsg, Loaded ( event, FullEventAttendees tabModel ) ) ->
+            Attendees.update tabMsg tabModel |> updateWith event FullEventAttendees AttendeesMsg model
+
+        ( AttendeesMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( SetlistMsg tabMsg, Loaded ( event, FullEventSetlist tabModel ) ) ->
+            Setlist.update tabMsg tabModel |> updateWith event FullEventSetlist SetlistMsg model
+
+        ( SetlistMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( CarpoolsMsg tabMsg, Loaded ( event, FullEventCarpools tabModel ) ) ->
+            Carpools.update tabMsg tabModel |> updateWith event FullEventCarpools CarpoolsMsg model
+
+        ( CarpoolsMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( UpdateAbsenceRequest newReason, Loaded ( event, FullEventRequestAbsence oldReason ) ) ->
+            ( { model | selected = Loaded ( event, FullEventRequestAbsence newReason ) }, Cmd.none )
+
+        ( UpdateAbsenceRequest _, _ ) ->
+            ( model, Cmd.none )
 
 
 tabTitle : EventTab -> String
@@ -142,6 +183,19 @@ tabTitle tab =
 ---- DATA ----
 
 
+submitAbsenceRequest : Common -> String -> Int -> Cmd Msg
+submitAbsenceRequest common reason eventId =
+    let
+        url =
+            "/absence_requests/" ++ String.fromInt eventId
+
+        body =
+            Encode.object [ ( "reason", Encode.string reason ) ]
+    in
+    postRequest common url body
+        |> Task.attempt OnRequestAbsence
+
+
 changeTab : FullEvent -> EventTab -> Model -> ( Model, Cmd Msg )
 changeTab event tab model =
     let
@@ -160,17 +214,24 @@ changeTab event tab model =
                     Carpools.init model.common event.id |> updateWith event FullEventCarpools CarpoolsMsg model
 
                 EventRequestAbsence ->
-                    RequestAbsence.init model.common event.id |> updateWith event FullEventRequestAbsence RequestAbsenceMsg model
+                    ( { model | selected = Loaded ( event, FullEventRequestAbsence "" ) }, Cmd.none )
     in
     ( newModel
     , Cmd.batch
         [ newCmd
-        , Route.replaceUrl model.common.key <| Route.Events { id = Just event.id, tab = Just tab }
+        , Route.replaceUrl model.common.key <|
+            Route.Events { id = Just event.id, tab = Just tab }
         ]
     )
 
 
-updateWith : FullEvent -> (tabModel -> FullEventTab) -> (tabMsg -> Msg) -> Model -> ( tabModel, Cmd tabMsg ) -> ( Model, Cmd Msg )
+updateWith :
+    FullEvent
+    -> (tabModel -> FullEventTab)
+    -> (tabMsg -> Msg)
+    -> Model
+    -> ( tabModel, Cmd tabMsg )
+    -> ( Model, Cmd Msg )
 updateWith event toModel toMsg model ( tabModel, subCmd ) =
     ( { model | selected = Loaded ( event, toModel tabModel ) }
     , Cmd.map toMsg subCmd
@@ -179,7 +240,13 @@ updateWith event toModel toMsg model ( tabModel, subCmd ) =
 
 loadEvents : Common -> EventRoute -> Cmd Msg
 loadEvents common route =
-    getRequest common "/events?full=true" (Http.expectJson OnLoadEvents (Decode.map2 Tuple.pair (Decode.list <| fullEventDecoder) (Decode.succeed route)))
+    getRequest common
+        "/events?full=true"
+        (Decode.map2 Tuple.pair
+            (Decode.list <| fullEventDecoder)
+            (Decode.succeed route)
+        )
+        |> Task.attempt OnLoadEvents
 
 
 type alias EventGroups =
@@ -205,16 +272,6 @@ organizeEvents now events =
             }
     in
     ( groupEvents pastEvents, groupEvents upcomingEvents )
-
-
-findSelectedEvent : Model -> Maybe FullEvent
-findSelectedEvent model =
-    case ( model.events, model.selected ) of
-        ( Loaded events, Loaded ( selectedEvent, _ ) ) ->
-            events |> List.Extra.find (\event -> event.id == selectedEvent.id)
-
-        ( _, _ ) ->
-            Nothing
 
 
 tabIsActive : FullEventTab -> EventTab -> Bool
@@ -245,76 +302,56 @@ tabIsActive currentTab tab =
 
 view : Model -> Html Msg
 view model =
-    let
-        content =
-            case model.events of
-                NotAsked ->
-                    text ""
-
-                Loading ->
-                    spinner
-
-                Loaded events ->
-                    pastAndFutureEventColumns model events
-
-                Failure ->
-                    text "Error"
-    in
-    div [] <|
+    div []
         [ section [ class "section" ]
-            [ div [ class "container" ]
-                [ content ]
+            [ div []
+                [ model.events |> Basics.remoteContent (pastAndFutureEventColumns model) ]
             ]
+        , eventSidebar model.selected
         ]
-            ++ eventSidebar model.selected
 
 
-eventSidebar : RemoteData ( FullEvent, FullEventTab ) -> List (Html Msg)
+eventSidebar : RemoteData ( FullEvent, FullEventTab ) -> Html Msg
 eventSidebar eventAndTab =
+    Basics.sidebar
+        { data = eventAndTab
+        , close = UnselectEvent
+        , render =
+            \eventTabPair ->
+                div [] <| tabContent eventTabPair
+        }
+
+
+tabContent : ( FullEvent, FullEventTab ) -> List (Html Msg)
+tabContent ( event, eventTab ) =
     let
-        emptySidebar =
-            div [ class "sidenav", style "width" "0%" ] []
-
-        overlay =
-            div [ class "transparent-overlay", onClick UnselectEvent ] []
-
-        sidebar =
-            div
-                [ class "sidenav"
-                , style "width" "40%"
-                , style "padding" "20px"
-                , style "padding-top" "80px"
-                ]
-
-        viewTab eventTab =
-            case eventTab of
-                FullEventDetails tab ->
-                    Details.view tab |> Html.map DetailsMsg
-
-                FullEventAttendees tab ->
-                    Attendees.view tab |> Html.map AttendeesMsg
-
-                FullEventSetlist tab ->
-                    Setlist.view tab |> Html.map SetlistMsg
-
-                FullEventCarpools tab ->
-                    Carpools.view tab |> Html.map CarpoolsMsg
-
-                FullEventRequestAbsence tab ->
-                    RequestAbsence.view tab |> Html.map RequestAbsenceMsg
+        header =
+            [ Basics.title event.name
+            , eventTabs event eventTab
+            ]
     in
-    case eventAndTab of
-        NotAsked ->
-            [ emptySidebar ]
+    case eventTab of
+        FullEventDetails tab ->
+            header ++ [ Details.view tab |> Html.map DetailsMsg ] ++ [ absenceRequestButton event ]
 
-        Loading ->
-            [ overlay, sidebar [ spinner ] ]
+        FullEventAttendees tab ->
+            header ++ [ Attendees.view tab |> Html.map AttendeesMsg ]
 
-        Loaded ( event, tab ) ->
-            [ overlay, sidebar [ Basics.title event.name, eventTabs event tab, viewTab tab ] ]
+        FullEventSetlist tab ->
+            header ++ [ Setlist.view tab |> Html.map SetlistMsg ]
 
-        Failure ->
-            [ overlay, sidebar [ text "whoops" ] ]
+        FullEventCarpools tab ->
+            header ++ [ Carpools.view tab |> Html.map CarpoolsMsg ]
+
+        FullEventRequestAbsence reason ->
+            [ requestAbsence
+                { reason = reason
+                , event = event
+                , updateReason = UpdateAbsenceRequest
+                , submit = RequestAbsence
+                , cancel = ChangeTab EventDetails
+                }
+            ]
 
 
 pastAndFutureEventColumns : Model -> List FullEvent -> Html Msg
@@ -323,10 +360,9 @@ pastAndFutureEventColumns model events =
         ( pastEvents, upcomingEvents ) =
             organizeEvents model.common.now events
     in
-    div [ class "container" ]
-        [ Basics.title "Upcoming"
-        , eventColumns model upcomingEvents
-        , Basics.title "Past"
+    div []
+        [ eventColumns model upcomingEvents
+        , Basics.divider "Past"
         , eventColumns model pastEvents
         ]
 
@@ -345,12 +381,10 @@ eventColumn : Model -> String -> List FullEvent -> Html Msg
 eventColumn model name events =
     let
         isSelected event =
-            case model.selected of
-                Loaded ( selected, _ ) ->
-                    selected.id == event.id
-
-                _ ->
-                    False
+            model.selected
+                |> remoteToMaybe
+                |> Maybe.map (\( selected, _ ) -> selected.id == event.id)
+                |> Maybe.withDefault False
     in
     div [ class "column is-one-quarter is-centered" ]
         [ Basics.title name
@@ -366,41 +400,8 @@ eventColumn model name events =
 
 eventRow : Model -> FullEvent -> List (Html Msg)
 eventRow model event =
-    let
-        didAttend =
-            event.attendance |> Maybe.map .didAttend |> Maybe.withDefault False
-
-        shouldAttend =
-            event.attendance |> Maybe.map .shouldAttend |> Maybe.withDefault False
-
-        confirmed =
-            event.attendance |> Maybe.map .confirmed |> Maybe.withDefault False
-
-        icon =
-            if eventIsOver model.common.now event then
-                div
-                    [ style "white-space" "nowrap"
-                    , class <|
-                        if didAttend || not shouldAttend then
-                            "has-text-success"
-
-                        else
-                            "has-text-danger"
-                    ]
-                    [ Basics.checkOrCross didAttend ]
-
-            else
-                div
-                    [ class <|
-                        if confirmed then
-                            "has-text-success"
-
-                        else
-                            "has-text-grey"
-                    ]
-                    [ Basics.checkOrCross shouldAttend ]
-    in
-    [ td [ style "text-align" "center" ] [ icon ]
+    [ td [ style "text-align" "center" ]
+        [ Basics.attendanceIcon model.common event event.attendance ]
     , td [] [ text <| simpleDateFormatter model.common.timeZone event.callTime ]
     , td [] [ text event.name ]
     ]
@@ -439,3 +440,13 @@ eventTabs event currentTab =
     in
     div [ class "tabs" ]
         [ ul [] (allTabs |> List.map (pageLink currentTab)) ]
+
+
+absenceRequestButton : FullEvent -> Html Msg
+absenceRequestButton event =
+    -- TODO: why do we need rsvpIssue
+    a
+        [ class "button is-primary is-outlined"
+        , onClick (ChangeTab EventRequestAbsence)
+        ]
+        [ text "Request Absence" ]

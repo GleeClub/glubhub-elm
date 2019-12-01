@@ -1,15 +1,19 @@
-port module Utils exposing (Common, RemoteData(..), alert, apiUrl, dateFormatter, eventIsOver, formatPhone, fullDateTimeFormatter, getRequest, handleJsonResponse, notFoundView, permittedTo, postRequest, rawHtml, romanNumeral, scrollToElement, setToken, simpleDateFormatter, simpleDateTimeFormatter, spinner, timeFormatter, timeFromNow)
+port module Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, apiUrl, dateFormatter, deleteRequest, eventIsOver, formatPhone, fullDateTimeFormatter, getRequest, goldColor, handleJsonResponse, mapLoaded, permittedTo, playPitch, postRequest, postRequestFull, rawHtml, remoteToMaybe, resultToRemote, resultToSubmissionState, romanNumeral, scrollToElement, setToken, simpleDateFormatter, simpleDateTimeFormatter, timeFormatter, timeFromNow)
 
 import Browser.Navigation as Nav
+import Color exposing (Color)
 import DateFormat
+import Error exposing (GreaseError, parseResponse)
 import Html exposing (Html, div, i, text)
 import Html.Attributes exposing (class)
 import Html.Parser
 import Html.Parser.Util
 import Http
 import Json.Decode as Decode exposing (Decoder)
-import Models.Event exposing (FullEvent, Member)
+import Json.Encode as Encode
+import Models.Event exposing (HasCallAndReleaseTimes, IsEvent, Member)
 import Models.Info exposing (Info, Semester)
+import Task exposing (Task)
 import Time exposing (Posix, Zone, millisToPosix, now, posixToMillis, toMonth)
 
 
@@ -21,24 +25,18 @@ apiUrl =
     "https://gleeclub.gatech.edu/cgi-bin/api"
 
 
+goldColor : Color
+goldColor =
+    Color.rgb 0.706 0.643 0.412
+
+
+timeout : Maybe Float
+timeout =
+    Just (1000 * 20)
+
+
 
 ---- REUSED COMPONENTS ----
-
-
-spinner : Html a
-spinner =
-    div [ class "spinner" ]
-        [ div [ class "spinner-inner" ]
-            [ i [ class "oldgold-text fas fa-circle-notch fa-2x fa-spin" ] []
-            ]
-        ]
-
-
-notFoundView : Html a
-notFoundView =
-    div []
-        [ text "Not found"
-        ]
 
 
 rawHtml : String -> List (Html msg)
@@ -59,7 +57,7 @@ type RemoteData a
     = NotAsked
     | Loading
     | Loaded a
-    | Failure
+    | Failure GreaseError
 
 
 type alias Common =
@@ -74,33 +72,100 @@ type alias Common =
     }
 
 
+type SubmissionState
+    = NotSentYet
+    | Sending
+    | ErrorSending GreaseError
+
+
 
 ---- FUNCTIONS ----
 
 
-getRequest : Common -> String -> Http.Expect msg -> Cmd msg
-getRequest common url expect =
-    Http.request
+mapLoaded : (a -> b) -> RemoteData a -> RemoteData b
+mapLoaded mapper remoteData =
+    case remoteData of
+        NotAsked ->
+            NotAsked
+
+        Loading ->
+            Loading
+
+        Loaded data ->
+            Loaded (mapper data)
+
+        Failure err ->
+            Failure err
+
+
+remoteToMaybe : RemoteData a -> Maybe a
+remoteToMaybe remoteData =
+    case remoteData of
+        Loaded data ->
+            Just data
+
+        other ->
+            Nothing
+
+
+resultToRemote : Result GreaseError a -> RemoteData a
+resultToRemote result =
+    case result of
+        Ok success ->
+            Loaded success
+
+        Err error ->
+            Failure error
+
+
+resultToSubmissionState : Result GreaseError a -> SubmissionState
+resultToSubmissionState result =
+    case result of
+        Ok _ ->
+            NotSentYet
+
+        Err error ->
+            ErrorSending error
+
+
+getRequest : Common -> String -> Decoder a -> Task GreaseError a
+getRequest common url decoder =
+    Http.task
         { method = "GET"
         , url = apiUrl ++ url
         , body = Http.emptyBody
         , headers = [ Http.header "token" common.token ]
-        , expect = expect
-        , timeout = Nothing
-        , tracker = Nothing
+        , resolver = Http.stringResolver <| parseResponse decoder
+        , timeout = timeout
         }
 
 
-postRequest : Common -> String -> Http.Body -> Http.Expect msg -> Cmd msg
-postRequest common url body expect =
-    Http.request
+postRequestFull : Common -> String -> Encode.Value -> Decoder a -> Task GreaseError a
+postRequestFull common url body decoder =
+    Http.task
         { method = "POST"
         , url = apiUrl ++ url
-        , body = body
+        , body = Http.jsonBody body
         , headers = [ Http.header "token" common.token ]
-        , expect = expect
-        , timeout = Nothing
-        , tracker = Nothing
+        , resolver = Http.stringResolver <| parseResponse decoder
+        , timeout = timeout
+        }
+
+
+postRequest : Common -> String -> Encode.Value -> Task GreaseError ()
+postRequest common url body =
+    postRequestFull common url body (Decode.succeed ())
+
+
+deleteRequest : Common -> String -> Task GreaseError ()
+deleteRequest common url =
+    Http.task
+        { method = "DELETE"
+        , url = apiUrl ++ url
+        , body = Http.emptyBody
+        , headers = [ Http.header "token" common.token ]
+        , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
+        , timeout = timeout
         }
 
 
@@ -230,9 +295,9 @@ timeFromNow common then_ =
         "in " ++ String.fromInt (diffMinutes // (60 * 24)) ++ " days"
 
 
-eventIsOver : Posix -> FullEvent -> Bool
-eventIsOver now event =
-    posixToMillis now < posixToMillis (event.releaseTime |> Maybe.withDefault event.callTime)
+eventIsOver : Posix -> HasCallAndReleaseTimes a -> Bool
+eventIsOver now { callTime, releaseTime } =
+    posixToMillis now < posixToMillis (releaseTime |> Maybe.withDefault callTime)
 
 
 formatPhone : String -> String
@@ -284,6 +349,10 @@ permittedTo permission user =
     user.permissions |> List.any (\p -> p.name == permission)
 
 
+
+-- PORTS --
+
+
 port setToken : Maybe String -> Cmd msg
 
 
@@ -291,3 +360,6 @@ port alert : String -> Cmd msg
 
 
 port scrollToElement : String -> Cmd msg
+
+
+port playPitch : Int -> Cmd msg

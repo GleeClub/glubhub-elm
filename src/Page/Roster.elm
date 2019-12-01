@@ -6,7 +6,7 @@ import Http
 import Json.Decode as Decode
 import Models.Event exposing (Member, memberDecoder)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, notFoundView, spinner)
+import Utils exposing (Common, RemoteData(..), apiUrl)
 
 
 

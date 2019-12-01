@@ -1,9 +1,41 @@
-module Models.Event exposing (..)
+module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, EventAttendee, EventCarpool, EventWithAttendance, FullEvent, FullEventAttendance, FullEventGig, Gig, GradeChange, Grades, HasAttendance, HasCallAndReleaseTimes, IsEvent, Member, MemberPermission, MemberRole, SimpleAttendance, UpdatedCarpool, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder, eventWithAttendanceDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder, gradeChangeDecoder, gradesDecoder, memberDecoder, memberPermissionDecoder, memberRoleDecoder, simpleAttendanceDecoder)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
-import Models.Info exposing (Enrollment, Uniform, enrollmentDecoder, posixDecoder, uniformDecoder)
+import Models.Info exposing (Enrollment, Role, Uniform, enrollmentDecoder, posixDecoder, roleDecoder, uniformDecoder)
 import Time exposing (Posix)
+
+
+type alias HasCallAndReleaseTimes a =
+    { a
+        | callTime : Posix
+        , releaseTime : Maybe Posix
+    }
+
+
+type alias IsEvent a =
+    HasCallAndReleaseTimes
+        { a
+            | id : Int
+            , name : String
+            , semester : String
+            , type_ : String
+            , points : Int
+            , comments : Maybe String
+            , location : Maybe String
+            , gigCount : Bool
+            , defaultAttend : Bool
+            , section : Maybe String
+        }
+
+
+type alias HasAttendance a =
+    { a
+        | shouldAttend : Bool
+        , didAttend : Bool
+        , confirmed : Bool
+        , minutesLate : Int
+    }
 
 
 type alias Event =
@@ -343,6 +375,13 @@ eventCarpoolDecoder =
         |> required "passengers" (Decode.list memberDecoder)
 
 
+type alias UpdatedCarpool =
+    { id : Maybe Int
+    , driver : Member
+    , passengers : List Member
+    }
+
+
 type alias Grades =
     { finalGrade : Float
     , volunteerGigsAttended : Int
@@ -447,3 +486,16 @@ memberPermissionDecoder =
     Decode.succeed MemberPermission
         |> required "name" string
         |> optional "eventType" (nullable string) Nothing
+
+
+type alias MemberRole =
+    { member : Member
+    , role : Role
+    }
+
+
+memberRoleDecoder : Decoder MemberRole
+memberRoleDecoder =
+    Decode.succeed MemberRole
+        |> required "member" memberDecoder
+        |> required "role" roleDecoder
