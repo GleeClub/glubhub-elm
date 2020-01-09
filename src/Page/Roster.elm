@@ -1,12 +1,11 @@
-module Page.Roster exposing (Model, Msg(..), init, update, view, viewMemberTable)
+module Page.Roster exposing (Model, Msg(..), init, update, view)
 
-import Html exposing (Html, a, div, h1, img, section, table, tbody, td, text, thead, tr)
-import Html.Attributes exposing (class, href, id, src)
-import Http
-import Json.Decode as Decode
-import Models.Event exposing (Member, memberDecoder)
-import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl)
+import Components.Basics as Basics
+import Html exposing (Html, a, div, section, table, tbody, td, text, thead, tr)
+import Html.Attributes exposing (class, href)
+import Models.Event exposing (Member)
+import Route
+import Utils exposing (Common, RemoteData(..), formatPhone, fullName)
 
 
 
@@ -14,13 +13,12 @@ import Utils exposing (Common, RemoteData(..), apiUrl)
 
 
 type alias Model =
-    { common : Common
-    }
+    Common
 
 
 init : Common -> ( Model, Cmd Msg )
 init common =
-    ( { common = common }, Cmd.none )
+    ( common, Cmd.none )
 
 
 
@@ -32,7 +30,7 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update _ model =
     ( model, Cmd.none )
 
 
@@ -42,32 +40,33 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    div [ id "roster" ]
-        [ section [ class "section" ]
-            [ div [ class "container" ]
-                [ div [ class "box" ] [ viewMemberTable model.common.members ] ]
+    section [ class "section" ]
+        [ div [ class "container" ]
+            [ Basics.box
+                [ memberTable model.members ]
             ]
         ]
 
 
-viewMemberTable : List Member -> Html Msg
-viewMemberTable members =
+memberTable : List Member -> Html Msg
+memberTable members =
+    let
+        headers =
+            [ "Name", "Section", "E-mail", "Phone", "Location" ]
+    in
     table [ class "table is-fullwidth" ]
-        [ thead [] <|
-            [ tr [] <|
-                List.map (\h -> td [] [ text h ]) [ "Name", "Section", "E-mail", "Phone", "Location" ]
-            ]
-        , tbody [] <|
-            (members
-                |> List.map
-                    (\m ->
-                        tr []
-                            [ td [] [ a [ Route.href <| Route.Profile m.email ] [ text m.fullName ] ]
-                            , td [] [ text <| Maybe.withDefault "None" m.section ]
-                            , td [] [ a [ href <| "mailto:" ++ m.email ] [ text m.email ] ]
-                            , td [] [ a [ href <| "tel:" ++ m.phoneNumber ] [ text m.phoneNumber ] ]
-                            , td [] [ text m.location ]
-                            ]
-                    )
-            )
+        [ thead []
+            [ tr [] (headers |> List.map (\h -> td [] [ text h ])) ]
+        , tbody [] (members |> List.map memberRow)
+        ]
+
+
+memberRow : Member -> Html Msg
+memberRow member =
+    tr []
+        [ td [] [ a [ Route.href <| Route.Profile member.email ] [ text (member |> fullName) ] ]
+        , td [] [ text <| Maybe.withDefault "None" member.section ]
+        , td [] [ a [ href <| "mailto:" ++ member.email ] [ text member.email ] ]
+        , td [] [ a [ href <| "tel:" ++ member.phoneNumber ] [ text <| formatPhone member.phoneNumber ] ]
+        , td [] [ text member.location ]
         ]

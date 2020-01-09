@@ -1,12 +1,37 @@
-module Components.Basics exposing (HorizontalField, Sidebar, attendanceIcon, backTextButton, box, checkOrCross, column, columns, divider, errorBox, horizontalField, linkButton, multilineTooltip, narrowColumn, notFoundView, remoteContent, remoteContentFull, sidebar, spinner, submissionStateBox, title, tooltip)
+module Components.Basics exposing
+    ( HorizontalField
+    , Sidebar
+    , attendanceIcon
+    , backTextButton
+    , box
+    , checkOrCross
+    , column
+    , columns
+    , divider
+    , errorBox
+    , horizontalField
+    , linkButton
+    , modal
+    , multilineTooltip
+    , narrowColumn
+    , notFoundView
+    , remoteContent
+    , remoteContentFull
+    , renderIfHasPermission
+    , sidebar
+    , spinner
+    , submissionStateBox
+    , title
+    , tooltip
+    )
 
 import Error exposing (GreaseError(..))
-import Html exposing (Html, a, article, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, tfoot, thead, tr)
-import Html.Attributes exposing (attribute, class, href, id, name, placeholder, src, style, type_, value)
+import Html exposing (Html, a, article, div, h1, i, input, label, p, span, text)
+import Html.Attributes exposing (attribute, class, hidden, href, id, name, placeholder, style, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Models.Event exposing (HasAttendance, IsEvent)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, permittedTo, submissionStateBoxId)
 
 
 spinner : Html a
@@ -54,8 +79,8 @@ tooltip : String -> List (Html.Attribute msg)
 tooltip content =
     [ class "tooltip is-tooltip"
     , style "cursor" "pointer"
+    , style "display" "inline"
     , attribute "data-tooltip" content
-    , style "z-index" "200"
     ]
 
 
@@ -144,13 +169,19 @@ attendanceIcon : Common -> IsEvent a -> Maybe (HasAttendance b) -> Html msg
 attendanceIcon common event attendance =
     let
         didAttend =
-            attendance |> Maybe.map .didAttend |> Maybe.withDefault False
+            attendance
+                |> Maybe.map .didAttend
+                |> Maybe.withDefault False
 
         shouldAttend =
-            attendance |> Maybe.map .shouldAttend |> Maybe.withDefault False
+            attendance
+                |> Maybe.map .shouldAttend
+                |> Maybe.withDefault False
 
         confirmed =
-            attendance |> Maybe.map .confirmed |> Maybe.withDefault False
+            attendance
+                |> Maybe.map .confirmed
+                |> Maybe.withDefault False
 
         ( wrapping, color, success ) =
             if eventIsOver common.now event then
@@ -190,6 +221,15 @@ remoteContent =
     remoteContentFull (text "")
 
 
+renderIfHasPermission : Common -> String -> Html msg -> Html msg
+renderIfHasPermission common permission content =
+    if common.user |> Maybe.map (permittedTo permission) |> Maybe.withDefault False then
+        content
+
+    else
+        text ""
+
+
 type alias Sidebar a msg =
     { render : a -> Html msg
     , data : RemoteData a
@@ -201,7 +241,7 @@ sidebar : Sidebar a msg -> Html msg
 sidebar data =
     let
         emptySidebar =
-            div [ class "sidenav hidden", style "width" "0%" ] []
+            div [ class "sidenav", hidden True ] []
 
         overlay =
             div [ class "transparent-overlay", onClick data.close ] []
@@ -209,7 +249,6 @@ sidebar data =
         sidebarDiv =
             div
                 [ class "sidenav"
-                , style "width" "40%"
                 , style "padding" "20px"
                 , style "padding-top" "80px"
                 ]
@@ -237,10 +276,10 @@ errorBox error =
                 Unauthorized ->
                     ( "unauthorized", "You aren't allowed to be here! Go on, get!" )
 
-                NotActiveYet member ->
+                NotActiveYet _ ->
                     ( "not active yet", "You're gonna need to confirm your account for the semester to do stuff." )
 
-                AlreadyLoggedIn token ->
+                AlreadyLoggedIn _ ->
                     ( "already logged in", "You tried to login twice, dummy. No need to work so hard." )
 
                 Forbidden requiredPermission ->
@@ -274,7 +313,11 @@ errorBox error =
                     , "I don't even know what happened: " ++ err
                     )
     in
-    article [ class "message is-danger" ]
+    article
+        [ class "message is-danger"
+        , style "padding-top" "5px"
+        , style "padding-bottom" "5px"
+        ]
         [ div [ class "message-header" ]
             [ p []
                 [ text "Something went wrong. ("
@@ -288,12 +331,23 @@ errorBox error =
 
 submissionStateBox : SubmissionState -> Html msg
 submissionStateBox state =
-    case state of
-        NotSentYet ->
-            text ""
+    div [ id submissionStateBoxId ]
+        [ case state of
+            NotSentYet ->
+                text ""
 
-        Sending ->
-            spinner
+            Sending ->
+                spinner
 
-        ErrorSending error ->
-            errorBox error
+            ErrorSending error ->
+                errorBox error
+        ]
+
+
+modal : msg -> Html msg -> Html msg
+modal closeMsg content =
+    div [ class "modal is-active" ]
+        [ div [ class "modal-background", onClick closeMsg ] []
+        , div [ class "modal-content", style "text-align" "center" ]
+            [ box [ content ] ]
+        ]

@@ -2,11 +2,19 @@
   color: #b4a46a;
 }
 
-tooltip.is-tooltip-primary::before {
+.oldgold {
+  background-color: #b4a46a;
+}
+
+.tooltip.is-tooltip-primary::before {
   background: rgba(0, 209, 178, 0.1);
 }
 
-.tooltip:hover::before {
+.is-tooltip[data-tooltip]::before {
+  z-index: 200;
+}
+
+.is-tooltip:hover::before {
   z-index: 200;
 }
 
@@ -57,28 +65,19 @@ div.spinner i {
   background-color: white;
   overflow-x: hidden;
   overflow-y: scroll;
-  transition: 2s;
   padding: 20px;
   padding-top: 100px;
 }
 
 @media screen and (max-width: 768px) {
   .sidenav:not(.hidden) {
-    width: 80%;
-  }
-
-  .sidenav.hidden {
-    width: 0%;
+    width: 100%;
   }
 }
 
 @media screen and (min-width: 769px) {
   .sidenav:not(.hidden) {
     width: 40%;
-  }
-
-  .sidenav.hidden {
-    width: 0%;
   }
 }
 
@@ -92,6 +91,10 @@ div.spinner i {
   background-color: rgba(0, 0, 0, 0.5);
   cursor: pointer;
   z-index: 2;
+}
+
+.sidenav .is-divider[data-content]::after {
+  background-color: #fff;
 }
 
 .box .is-divider[data-content]::after {

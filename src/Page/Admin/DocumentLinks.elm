@@ -1,20 +1,16 @@
 module Page.Admin.DocumentLinks exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, section, span, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (attribute, class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode exposing (field, string)
+import Html exposing (Html, b, button, div, input, span, table, td, text, tr)
+import Html.Attributes exposing (attribute, class, placeholder, style, type_, value)
+import Html.Events exposing (onBlur, onClick, onInput)
+import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
-import List.Extra exposing (groupWhile, removeAt, setAt, updateAt)
-import Models.Document exposing (DocumentLink, documentLinkDecoder)
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
-import Route exposing (Route)
+import List.Extra exposing (removeAt, setAt)
+import Models.Info exposing (DocumentLink, documentLinkDecoder)
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, deleteRequest, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
 
 
 
@@ -43,11 +39,6 @@ init common =
 emptyDocumentLink : DocumentLink
 emptyDocumentLink =
     { name = "", url = "" }
-
-
-editLinksPermission : String
-editLinksPermission =
-    "edit-links"
 
 
 

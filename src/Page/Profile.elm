@@ -3,17 +3,14 @@ module Page.Profile exposing (Model, Msg(..), init, update, view)
 import Browser.Navigation exposing (reload)
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, br, button, div, img, section, text)
-import Html.Attributes exposing (class, href, id, src, type_)
+import Html exposing (Html, a, br, div, img, section, text)
+import Html.Attributes exposing (class, href, src)
 import Html.Events exposing (onClick)
-import Http
-import Json.Decode as Decode
 import List.Extra
-import Maybe.Extra exposing (isJust)
 import Models.Event exposing (Member, memberDecoder)
-import Route exposing (Route)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), formatPhone, getRequest, setToken)
+import Utils exposing (Common, RemoteData(..), formatPhone, fullName, getRequest, setToken)
 
 
 
@@ -115,7 +112,7 @@ viewProfile isCurrentUser member =
                 |> Maybe.withDefault "Came to Tech in the summer of '69"
 
         rows =
-            [ text member.fullName
+            [ text (member |> fullName)
             , text officership
             , text (member.about |> Maybe.withDefault "I don't have a quote")
             , a [ href <| "mailto:" ++ member.email ] [ text member.email ]

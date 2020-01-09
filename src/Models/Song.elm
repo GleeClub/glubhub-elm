@@ -1,7 +1,29 @@
-module Models.Song exposing (Accidental(..), BasePitch(..), Pitch, Song, SongLink, SongLinkSection, SongMode(..), halfStepsAboveA, pitchDecoder, pitchToString, songDecoder, songLinkDecoder, songLinkSectionDecoder, songModeDecoder, songModeToString)
+module Models.Song exposing
+    ( Accidental(..)
+    , BasePitch(..)
+    , Pitch
+    , Song
+    , SongLink
+    , SongLinkSection
+    , SongMode(..)
+    , allAccidentals
+    , allBasePitches
+    , allPitches
+    , halfStepsAboveA
+    , pitchDecoder
+    , pitchEncoder
+    , pitchToString
+    , songDecoder
+    , songLinkDecoder
+    , songLinkSectionDecoder
+    , songModeDecoder
+    , songModeEncoder
+    , songModeToString
+    )
 
-import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
-import Json.Decode.Pipeline exposing (custom, optional, required)
+import Json.Decode as Decode exposing (Decoder, bool, int, nullable, string)
+import Json.Decode.Pipeline exposing (optional, required)
+import Json.Encode as Encode
 
 
 type alias Song =
@@ -12,7 +34,7 @@ type alias Song =
     , key : Maybe Pitch
     , startingPitch : Maybe Pitch
     , mode : Maybe SongMode
-    , links : Maybe (List SongLinkSection)
+    , links : List SongLinkSection
     }
 
 
@@ -23,10 +45,18 @@ songDecoder =
         |> required "title" string
         |> optional "info" (nullable string) Nothing
         |> required "current" bool
-        |> optional "key" (nullable pitchDecoder) Nothing
-        |> optional "startingPitch" (nullable pitchDecoder) Nothing
+        |> optional "key"
+            (nullable string
+                |> Decode.andThen (\s -> s |> Maybe.withDefault "" |> pitchDecoder)
+            )
+            Nothing
+        |> optional "startingPitch"
+            (nullable string
+                |> Decode.andThen (\s -> s |> Maybe.withDefault "" |> pitchDecoder)
+            )
+            Nothing
         |> optional "mode" (nullable songModeDecoder) Nothing
-        |> optional "links" (nullable <| Decode.list songLinkSectionDecoder) Nothing
+        |> optional "links" (Decode.list songLinkSectionDecoder) []
 
 
 type alias SongLinkSection =
@@ -70,10 +100,10 @@ songModeToString : SongMode -> String
 songModeToString mode =
     case mode of
         Major ->
-            "major"
+            "Major"
 
         Minor ->
-            "minor"
+            "Minor"
 
 
 songModeDecoder : Decoder SongMode
@@ -82,15 +112,25 @@ songModeDecoder =
         |> Decode.andThen
             (\mode ->
                 case mode of
-                    "major" ->
+                    "Major" ->
                         Decode.succeed Major
 
-                    "minor" ->
+                    "Minor" ->
                         Decode.succeed Minor
 
-                    other ->
-                        Decode.fail "SongMode can only be \"major\" or \"minor\""
+                    _ ->
+                        Decode.fail "SongMode can only be \"Major\" or \"Minor\""
             )
+
+
+songModeEncoder : SongMode -> Encode.Value
+songModeEncoder songMode =
+    case songMode of
+        Major ->
+            Encode.string "Major"
+
+        Minor ->
+            Encode.string "Minor"
 
 
 type BasePitch
@@ -103,10 +143,20 @@ type BasePitch
     | G
 
 
+allBasePitches : List BasePitch
+allBasePitches =
+    [ A, B, C, D, E, F, G ]
+
+
 type Accidental
     = Natural
     | Flat
     | Sharp
+
+
+allAccidentals : List Accidental
+allAccidentals =
+    [ Natural, Flat, Sharp ]
 
 
 type alias Pitch =
@@ -115,54 +165,109 @@ type alias Pitch =
     }
 
 
-pitchDecoder : Decoder Pitch
-pitchDecoder =
-    string
-        |> Decode.andThen
-            (\pitch ->
-                let
-                    base =
-                        case pitch |> String.slice 0 1 of
-                            "A" ->
-                                Decode.succeed A
+allPitches : List Pitch
+allPitches =
+    let
+        allPitchVariations basePitch =
+            allAccidentals
+                |> List.map
+                    (\accidental ->
+                        { base = basePitch
+                        , accidental = accidental
+                        }
+                    )
+    in
+    allBasePitches |> List.concatMap allPitchVariations
 
-                            "B" ->
-                                Decode.succeed B
 
-                            "C" ->
-                                Decode.succeed C
+pitchDecoder : String -> Decoder (Maybe Pitch)
+pitchDecoder pitch =
+    let
+        base =
+            case pitch |> String.slice 0 1 of
+                "A" ->
+                    Decode.succeed A
 
-                            "D" ->
-                                Decode.succeed D
+                "B" ->
+                    Decode.succeed B
 
-                            "E" ->
-                                Decode.succeed E
+                "C" ->
+                    Decode.succeed C
 
-                            "F" ->
-                                Decode.succeed F
+                "D" ->
+                    Decode.succeed D
 
-                            "G" ->
-                                Decode.succeed G
+                "E" ->
+                    Decode.succeed E
 
-                            _ ->
-                                Decode.fail "invalid pitch"
+                "F" ->
+                    Decode.succeed F
 
-                    accidental =
-                        case pitch |> String.slice 1 2 of
-                            "" ->
-                                Decode.succeed Natural
+                "G" ->
+                    Decode.succeed G
 
-                            "♭" ->
-                                Decode.succeed Flat
+                _ ->
+                    Decode.fail "invalid pitch"
 
-                            "♯" ->
-                                Decode.succeed Sharp
+        accidental =
+            case pitch |> String.slice 1 10 of
+                "" ->
+                    Decode.succeed Natural
 
-                            _ ->
-                                Decode.fail "invalid accidental"
-                in
-                Decode.map2 Pitch base accidental
-            )
+                "Flat" ->
+                    Decode.succeed Flat
+
+                "Sharp" ->
+                    Decode.succeed Sharp
+
+                _ ->
+                    Decode.fail "invalid accidental"
+    in
+    if String.isEmpty pitch then
+        Decode.succeed Nothing
+
+    else
+        Decode.map2 (\b a -> Just <| Pitch b a) base accidental
+
+
+pitchEncoder : Pitch -> String
+pitchEncoder pitch =
+    let
+        base =
+            case pitch.base of
+                A ->
+                    "A"
+
+                B ->
+                    "B"
+
+                C ->
+                    "D"
+
+                D ->
+                    "D"
+
+                E ->
+                    "E"
+
+                F ->
+                    "F"
+
+                G ->
+                    "G"
+
+        accidental =
+            case pitch.accidental of
+                Natural ->
+                    ""
+
+                Flat ->
+                    "Flat"
+
+                Sharp ->
+                    "Sharp"
+    in
+    base ++ accidental
 
 
 pitchToString : Pitch -> String

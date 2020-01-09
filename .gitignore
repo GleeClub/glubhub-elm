@@ -1,5 +1,6 @@
 # Distribution
 build/
+build.zip
 
 # elm-package generated files
 elm-stuff

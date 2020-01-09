@@ -1,20 +1,19 @@
-module Page.Admin exposing (Model, Msg(..), allTabs, currentTab, init, pageList, tabText, update, view)
+module Page.Admin exposing (Model, Msg(..), init, tabIsActive, update, view)
 
 import Components.Basics as Basics
 import Components.SelectableList exposing (selectableList)
-import Html exposing (Html, aside, div, li, section, td, text, ul)
-import Html.Attributes exposing (class, style)
-import Html.Events exposing (onClick)
-import Maybe.Extra
-import Models.Event exposing (FullEvent)
+import Html exposing (Html, div, section, td, text)
+import Html.Attributes exposing (class)
 import Page.Admin.AbsenceRequests as AbsenceRequests
-import Page.Admin.Announcements as Announcements
+import Page.Admin.CreateEvent as CreateEvent
 import Page.Admin.DocumentLinks as DocumentLinks
 import Page.Admin.Dues as Dues
-import Page.Admin.MakeAnnouncement as MakeAnnouncement
+import Page.Admin.EditSemester as EditSemester
+import Page.Admin.GigRequests as GigRequests
 import Page.Admin.OfficerPositions as OfficerPositions
 import Page.Admin.SitePermissions as SitePermissions
 import Page.Admin.Uniforms as Uniforms
+import Page.Admin.WebmasterTools as WebmasterTools
 import Page.Events exposing (Msg)
 import Route exposing (AdminTab(..))
 import Utils exposing (Common, RemoteData(..))
@@ -31,17 +30,16 @@ type alias Model =
 
 
 type FullAdminTab
-    = FullAdminCreateEvent
-    | FullAdminGigRequest
-    | FullAdminMakeAnnouncement MakeAnnouncement.Model
+    = FullAdminCreateEvent CreateEvent.Model
+    | FullAdminGigRequests GigRequests.Model
     | FullAdminAbsenceRequests AbsenceRequests.Model
-    | FullAdminEditSemester
+    | FullAdminEditSemester EditSemester.Model
     | FullAdminOfficerPositions OfficerPositions.Model
-    | FullAdminAnnouncements Announcements.Model
     | FullAdminSitePermissions SitePermissions.Model
     | FullAdminUniforms Uniforms.Model
     | FullAdminDues Dues.Model
     | FullAdminDocumentLinks DocumentLinks.Model
+    | FullAdminWebmasterTools WebmasterTools.Model
 
 
 init : Common -> Maybe AdminTab -> ( Model, Cmd Msg )
@@ -64,14 +62,16 @@ init common maybeTab =
 
 type Msg
     = SelectTab AdminTab
-    | MakeAnnouncementMsg MakeAnnouncement.Msg
     | AbsenceRequestsMsg AbsenceRequests.Msg
+    | GigRequestsMsg GigRequests.Msg
     | OfficerPositionsMsg OfficerPositions.Msg
-    | AnnouncementsMsg Announcements.Msg
+    | EditSemesterMsg EditSemester.Msg
     | DuesMsg Dues.Msg
     | UniformsMsg Uniforms.Msg
     | SitePermissionsMsg SitePermissions.Msg
     | DocumentLinksMsg DocumentLinks.Msg
+    | WebmasterToolsMsg WebmasterTools.Msg
+    | CreateEventMsg CreateEvent.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -80,52 +80,64 @@ update msg model =
         ( SelectTab tab, _ ) ->
             changeTab model tab
 
-        ( MakeAnnouncementMsg tabMsg, Just (FullAdminMakeAnnouncement tabModel) ) ->
-            MakeAnnouncement.update tabMsg tabModel |> updateWith FullAdminMakeAnnouncement MakeAnnouncementMsg model
-
-        ( MakeAnnouncementMsg tabMsg, _ ) ->
-            ( model, Cmd.none )
-
         ( OfficerPositionsMsg tabMsg, Just (FullAdminOfficerPositions tabModel) ) ->
             OfficerPositions.update tabMsg tabModel |> updateWith FullAdminOfficerPositions OfficerPositionsMsg model
 
-        ( OfficerPositionsMsg tabMsg, _ ) ->
+        ( OfficerPositionsMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( AnnouncementsMsg tabMsg, Just (FullAdminAnnouncements tabModel) ) ->
-            Announcements.update tabMsg tabModel |> updateWith FullAdminAnnouncements AnnouncementsMsg model
+        ( GigRequestsMsg tabMsg, Just (FullAdminGigRequests tabModel) ) ->
+            GigRequests.update tabMsg tabModel |> updateWith FullAdminGigRequests GigRequestsMsg model
 
-        ( AnnouncementsMsg tabMsg, _ ) ->
+        ( GigRequestsMsg _, _ ) ->
             ( model, Cmd.none )
 
         ( DuesMsg tabMsg, Just (FullAdminDues tabModel) ) ->
             Dues.update tabMsg tabModel |> updateWith FullAdminDues DuesMsg model
 
-        ( DuesMsg tabMsg, _ ) ->
+        ( DuesMsg _, _ ) ->
             ( model, Cmd.none )
 
         ( UniformsMsg tabMsg, Just (FullAdminUniforms tabModel) ) ->
             Uniforms.update tabMsg tabModel |> updateWith FullAdminUniforms UniformsMsg model
 
-        ( UniformsMsg tabMsg, _ ) ->
+        ( UniformsMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( EditSemesterMsg tabMsg, Just (FullAdminEditSemester tabModel) ) ->
+            EditSemester.update tabMsg tabModel |> updateWith FullAdminEditSemester EditSemesterMsg model
+
+        ( EditSemesterMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( CreateEventMsg tabMsg, Just (FullAdminCreateEvent tabModel) ) ->
+            CreateEvent.update tabMsg tabModel |> updateWith FullAdminCreateEvent CreateEventMsg model
+
+        ( CreateEventMsg _, _ ) ->
             ( model, Cmd.none )
 
         ( AbsenceRequestsMsg tabMsg, Just (FullAdminAbsenceRequests tabModel) ) ->
             AbsenceRequests.update tabMsg tabModel |> updateWith FullAdminAbsenceRequests AbsenceRequestsMsg model
 
-        ( AbsenceRequestsMsg tabMsg, _ ) ->
+        ( AbsenceRequestsMsg _, _ ) ->
             ( model, Cmd.none )
 
         ( SitePermissionsMsg tabMsg, Just (FullAdminSitePermissions tabModel) ) ->
             SitePermissions.update tabMsg tabModel |> updateWith FullAdminSitePermissions SitePermissionsMsg model
 
-        ( SitePermissionsMsg tabMsg, _ ) ->
+        ( SitePermissionsMsg _, _ ) ->
             ( model, Cmd.none )
 
         ( DocumentLinksMsg tabMsg, Just (FullAdminDocumentLinks tabModel) ) ->
             DocumentLinks.update tabMsg tabModel |> updateWith FullAdminDocumentLinks DocumentLinksMsg model
 
-        ( DocumentLinksMsg tabMsg, _ ) ->
+        ( DocumentLinksMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( WebmasterToolsMsg tabMsg, Just (FullAdminWebmasterTools tabModel) ) ->
+            WebmasterTools.update tabMsg tabModel |> updateWith FullAdminWebmasterTools WebmasterToolsMsg model
+
+        ( WebmasterToolsMsg _, _ ) ->
             ( model, Cmd.none )
 
 
@@ -134,26 +146,20 @@ changeTab model tab =
     let
         ( newModel, newCmd ) =
             case tab of
-                AdminCreateEvent ->
-                    ( { model | tab = Just FullAdminCreateEvent }, Cmd.none )
+                AdminCreateEvent gigRequestId ->
+                    CreateEvent.init model.common gigRequestId |> updateWith FullAdminCreateEvent CreateEventMsg model
 
                 AdminGigRequest ->
-                    ( { model | tab = Just FullAdminGigRequest }, Cmd.none )
-
-                AdminMakeAnnouncement ->
-                    MakeAnnouncement.init model.common |> updateWith FullAdminMakeAnnouncement MakeAnnouncementMsg model
+                    GigRequests.init model.common |> updateWith FullAdminGigRequests GigRequestsMsg model
 
                 AdminAbsenceRequests ->
                     AbsenceRequests.init model.common |> updateWith FullAdminAbsenceRequests AbsenceRequestsMsg model
 
                 AdminEditSemester ->
-                    ( { model | tab = Just FullAdminEditSemester }, Cmd.none )
+                    EditSemester.init model.common |> updateWith FullAdminEditSemester EditSemesterMsg model
 
                 AdminOfficerPositions ->
                     OfficerPositions.init model.common |> updateWith FullAdminOfficerPositions OfficerPositionsMsg model
-
-                AdminAnnouncements ->
-                    Announcements.init model.common |> updateWith FullAdminAnnouncements AnnouncementsMsg model
 
                 AdminSitePermissions ->
                     SitePermissions.init model.common |> updateWith FullAdminSitePermissions SitePermissionsMsg model
@@ -166,6 +172,9 @@ changeTab model tab =
 
                 AdminDocumentLinks ->
                     DocumentLinks.init model.common |> updateWith FullAdminDocumentLinks DocumentLinksMsg model
+
+                AdminWebmasterTools ->
+                    WebmasterTools.init model.common |> updateWith FullAdminWebmasterTools WebmasterToolsMsg model
     in
     ( newModel
     , Cmd.batch
@@ -193,10 +202,8 @@ updateWith toModel toMsg model ( tabModel, subCmd ) =
 
 allTabs : List AdminTab
 allTabs =
-    [ AdminCreateEvent
+    [ AdminCreateEvent Nothing
     , AdminGigRequest
-    , AdminMakeAnnouncement
-    , AdminAnnouncements
     , AdminAbsenceRequests
     , AdminEditSemester
     , AdminOfficerPositions
@@ -204,23 +211,18 @@ allTabs =
     , AdminUniforms
     , AdminDues
     , AdminDocumentLinks
+    , AdminWebmasterTools
     ]
 
 
 tabText : AdminTab -> String
 tabText tab =
     case tab of
-        AdminCreateEvent ->
+        AdminCreateEvent _ ->
             "Create Event"
 
         AdminGigRequest ->
             "Gig Requests"
-
-        AdminMakeAnnouncement ->
-            "Make Announcement"
-
-        AdminAnnouncements ->
-            "All Announcements"
 
         AdminAbsenceRequests ->
             "Absence Requests"
@@ -243,29 +245,26 @@ tabText tab =
         AdminDocumentLinks ->
             "Document Links"
 
+        AdminWebmasterTools ->
+            "Webmaster Tools"
+
 
 tabIsActive : Model -> AdminTab -> Bool
 tabIsActive model tab =
     case ( model.tab, tab ) of
-        ( Just FullAdminCreateEvent, AdminCreateEvent ) ->
+        ( Just (FullAdminCreateEvent _), AdminCreateEvent _ ) ->
             True
 
-        ( Just FullAdminGigRequest, AdminGigRequest ) ->
-            True
-
-        ( Just (FullAdminMakeAnnouncement _), AdminMakeAnnouncement ) ->
+        ( Just (FullAdminGigRequests _), AdminGigRequest ) ->
             True
 
         ( Just (FullAdminAbsenceRequests _), AdminAbsenceRequests ) ->
             True
 
-        ( Just FullAdminEditSemester, AdminEditSemester ) ->
+        ( Just (FullAdminEditSemester _), AdminEditSemester ) ->
             True
 
         ( Just (FullAdminOfficerPositions _), AdminOfficerPositions ) ->
-            True
-
-        ( Just (FullAdminAnnouncements _), AdminAnnouncements ) ->
             True
 
         ( Just (FullAdminSitePermissions _), AdminSitePermissions ) ->
@@ -278,6 +277,9 @@ tabIsActive model tab =
             True
 
         ( Just (FullAdminDocumentLinks _), AdminDocumentLinks ) ->
+            True
+
+        ( Just (FullAdminWebmasterTools _), AdminWebmasterTools ) ->
             True
 
         ( _, _ ) ->
@@ -294,7 +296,14 @@ view model =
         [ section [ class "section" ]
             [ div [ class "container" ]
                 [ div [ class "columns" ]
-                    [ pageList model, currentTab model ]
+                    [ pageList model
+                    , model.tab
+                        |> Maybe.map tabContent
+                        |> Maybe.withDefault
+                            (Basics.narrowColumn
+                                [ Basics.box [ text "Please select a menu item." ] ]
+                            )
+                    ]
                 ]
             ]
         ]
@@ -311,39 +320,23 @@ pageList model =
         }
 
 
-currentTab : Model -> Html Msg
-currentTab model =
-    case model.tab of
-        Nothing ->
-            Basics.box [ text "Select a menu item" ]
-
-        Just tab ->
-            tabContent model tab
-
-
-tabContent : Model -> FullAdminTab -> Html Msg
-tabContent model tab =
+tabContent : FullAdminTab -> Html Msg
+tabContent tab =
     case tab of
-        FullAdminCreateEvent ->
-            Basics.box [ text "Create Event" ]
+        FullAdminCreateEvent tabModel ->
+            CreateEvent.view tabModel |> Html.map CreateEventMsg
 
-        FullAdminGigRequest ->
-            Basics.box [ text "Gig Requests" ]
-
-        FullAdminMakeAnnouncement tabModel ->
-            MakeAnnouncement.view tabModel |> Html.map MakeAnnouncementMsg
+        FullAdminGigRequests tabModel ->
+            GigRequests.view tabModel |> Html.map GigRequestsMsg
 
         FullAdminAbsenceRequests tabModel ->
             AbsenceRequests.view tabModel |> Html.map AbsenceRequestsMsg
 
-        FullAdminEditSemester ->
-            Basics.box [ text "Edit Semester" ]
+        FullAdminEditSemester tabModel ->
+            EditSemester.view tabModel |> Html.map EditSemesterMsg
 
         FullAdminOfficerPositions tabModel ->
             OfficerPositions.view tabModel |> Html.map OfficerPositionsMsg
-
-        FullAdminAnnouncements tabModel ->
-            Announcements.view tabModel |> Html.map AnnouncementsMsg
 
         FullAdminSitePermissions tabModel ->
             SitePermissions.view tabModel |> Html.map SitePermissionsMsg
@@ -356,3 +349,6 @@ tabContent model tab =
 
         FullAdminDocumentLinks tabModel ->
             DocumentLinks.view tabModel |> Html.map DocumentLinksMsg
+
+        FullAdminWebmasterTools tabModel ->
+            WebmasterTools.view tabModel |> Html.map WebmasterToolsMsg

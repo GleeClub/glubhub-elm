@@ -1,63 +1,232 @@
 module Page.Admin.CreateEvent exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Components.Forms exposing (checkboxInput, dateInput, fieldWrapper, textInput, textareaInput, timeInput)
+import Datetime exposing (hyphenDateFormatter, parseFormDateAndTimeString, twentyFourHourTimeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan, href, id, placeholder, src, style, type_, value)
+import Html exposing (Html, br, button, div, form, input, label, option, select, text, textarea)
+import Html.Attributes exposing (checked, class, placeholder, selected, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
-import List.Extra exposing (groupWhile)
-import Models.Document exposing (DocumentLink, documentLinkDecoder)
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
-import Route exposing (Route)
+import List.Extra as List
+import Maybe.Extra exposing (isNothing)
+import Models.Admin exposing (GigRequest, gigRequestDecoder)
+import Models.Info exposing (Semester, Uniform, semesterDecoder)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, deleteRequest, getRequest, postRequest)
-import Iso8601
-import Time exposing (Posix)
+import Time exposing (posixToMillis)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequestFull, resultToRemote)
+
+
 
 ---- MODEL ----
 
 
 type alias Model =
     { common : Common
-    , newEvent : NewEventForm
+    , createForm : RemoteData CreateEventForm
+    , semesters : RemoteData (List Semester)
     , state : SubmissionState
     }
 
 
-type alias NewEventForm =
-    { name : String
-    , semester : String
-    , type_ : String
-    , callTime : Posix
-    , releaseTime : Maybe Posix
-    , points : Int
-    , comments : Maybe String
-    , location : Maybe String
-    , gigCount : Maybe Bool
-    , defaultAttend : Bool
-    , repeat : String
-    , repeatUntil : Maybe Posix
+type alias CreateEventForm =
+    { newEvent : NewEvent
+    , newGig : NewGig
+    , gigRequestId : Maybe Int
     }
 
 
-init : Common -> ( Model, Cmd Msg )
-init common =
+type alias NewEvent =
+    { name : String
+    , semester : String
+    , type_ : String
+    , callTime : String
+    , callDate : String
+    , releaseTime : String
+    , releaseDate : String
+    , points : Maybe Int
+    , comments : String
+    , location : String
+    , gigCount : Bool
+    , defaultAttend : Bool
+    , repeat : RepeatPeriod
+    , repeatUntil : String
+    }
+
+
+type alias NewGig =
+    { performanceTime : String
+    , uniform : Maybe Uniform
+    , contactName : String
+    , contactEmail : String
+    , contactPhone : String
+    , price : Maybe Int
+    , public : Bool
+    , summary : String
+    , description : String
+    }
+
+
+type RepeatPeriod
+    = NoRepeat
+    | Daily
+    | Weekly
+    | BiWeekly
+    | Monthly
+    | Yearly
+
+
+capitalizeFirstChar : String -> String
+capitalizeFirstChar word =
+    let
+        firstChar =
+            word |> String.slice 0 1 |> String.toUpper
+
+        restOfWord =
+            word |> String.slice 1 (String.length word)
+    in
+    firstChar ++ restOfWord
+
+
+periodToString : RepeatPeriod -> String
+periodToString period =
+    case period of
+        NoRepeat ->
+            "no"
+
+        Daily ->
+            "daily"
+
+        Weekly ->
+            "weekly"
+
+        BiWeekly ->
+            "biweekly"
+
+        Monthly ->
+            "monthly"
+
+        Yearly ->
+            "yearly"
+
+
+stringToPeriod : String -> RepeatPeriod
+stringToPeriod period =
+    case period of
+        "daily" ->
+            Daily
+
+        "weekly" ->
+            Weekly
+
+        "biweekly" ->
+            BiWeekly
+
+        "monthly" ->
+            Monthly
+
+        "yearly" ->
+            Yearly
+
+        _ ->
+            NoRepeat
+
+
+allRepeatPeriods : List RepeatPeriod
+allRepeatPeriods =
+    [ NoRepeat, Daily, Weekly, BiWeekly, Monthly, Yearly ]
+
+
+emptyEventForm : Common -> NewEvent
+emptyEventForm common =
+    { name = ""
+    , semester = common.currentSemester.name
+    , type_ = "Rehearsal"
+    , callTime = ""
+    , callDate = ""
+    , releaseTime = ""
+    , releaseDate = ""
+    , points = Nothing
+    , comments = ""
+    , location = ""
+    , gigCount = False
+    , defaultAttend = True
+    , repeat = NoRepeat
+    , repeatUntil = ""
+    }
+
+
+emptyGigForm : NewGig
+emptyGigForm =
+    { performanceTime = ""
+    , uniform = Nothing
+    , contactName = ""
+    , contactEmail = ""
+    , contactPhone = ""
+    , price = Nothing
+    , public = False
+    , summary = ""
+    , description = ""
+    }
+
+
+formFromGigRequest : Common -> GigRequest -> CreateEventForm
+formFromGigRequest common gigRequest =
+    { gigRequestId = Just gigRequest.id
+    , newEvent =
+        { name = gigRequest.name ++ " for " ++ gigRequest.organization
+        , semester = common.currentSemester.name
+        , type_ = "Volunteer Gig"
+        , callTime = gigRequest.startTime |> twentyFourHourTimeFormatter common.timeZone
+        , callDate = gigRequest.startTime |> hyphenDateFormatter common.timeZone
+        , releaseTime = ""
+        , releaseDate = ""
+        , points = Just 5
+        , comments = gigRequest.comments |> Maybe.withDefault ""
+        , location = gigRequest.location
+        , gigCount = True
+        , defaultAttend = False
+        , repeat = NoRepeat
+        , repeatUntil = ""
+        }
+    , newGig =
+        { performanceTime = gigRequest.startTime |> twentyFourHourTimeFormatter common.timeZone
+        , uniform = Nothing
+        , contactName = gigRequest.contactName
+        , contactEmail = gigRequest.contactEmail
+        , contactPhone = gigRequest.contactPhone
+        , price = Nothing
+        , public = False
+        , summary = ""
+        , description = ""
+        }
+    }
+
+
+init : Common -> Maybe Int -> ( Model, Cmd Msg )
+init common gigRequestId =
     ( { common = common
-      , links = Loading
+      , createForm =
+            Loaded
+                { newEvent = emptyEventForm common
+                , newGig = emptyGigForm
+                , gigRequestId = gigRequestId
+                }
+      , semesters = Loading
       , state = NotSentYet
-      , newLink = { name = "", url = "" }
       }
-    , loadDocumentLinks common
+    , Cmd.batch <|
+        [ loadSemesters common ]
+            ++ (case gigRequestId of
+                    Just requestId ->
+                        [ loadGigRequest common requestId ]
+
+                    Nothing ->
+                        []
+               )
     )
-
-
-editLinksPermission : String
-editLinksPermission =
-    "edit-links"
 
 
 
@@ -65,170 +234,149 @@ editLinksPermission =
 
 
 type Msg
-    = OnLoadLinks (GreaseResult (List DocumentLink))
-    | OnChangeLink (GreaseResult ())
-    | UpdateLink DocumentLink Int
-    | SendLinkUpdate Int
-    | DeleteLink Int
-    | InputNewName String
-    | InputNewUrl String
-    | CreateNewLink
+    = OnLoadGigRequest (GreaseResult GigRequest)
+    | OnLoadSemesters (GreaseResult (List Semester))
+    | UpdateNewEventForm NewEvent
+    | UpdateNewGigForm NewGig
+    | CreateEvent
+    | OnCreateEvent (GreaseResult Int)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadLinks (Ok links) ->
-            ( { model | links = Loaded links }, Cmd.none )
-
-        OnLoadLinks (Err error) ->
-            ( { model | links = Failure error }, Cmd.none )
-
-        OnChangeLink result ->
+        OnLoadGigRequest result ->
             ( { model
-                | state =
-                    case result of
-                        Ok _ ->
-                            NotSentYet
-
-                        Err error ->
-                            ErrorSending error
+                | createForm =
+                    result
+                        |> resultToRemote
+                        |> mapLoaded (formFromGigRequest model.common)
               }
             , Cmd.none
             )
 
-        UpdateLink link linkIndex ->
-            case model.links of
-                Loaded links ->
-                    let
-                        linkMapper =
-                            List.indexedMap
-                                (\index oldLink ->
-                                    if index == linkIndex then
-                                        link
+        OnLoadSemesters result ->
+            ( { model | semesters = resultToRemote result }, Cmd.none )
 
-                                    else
-                                        oldLink
-                                )
-                    in
-                    ( { model | links = Loaded (links |> linkMapper) }
-                    , Cmd.none
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        SendLinkUpdate index ->
-            case model |> findLink index of
-                Just link ->
-                    ( { model | state = Sending }, updateDocumentLink model.common link )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        DeleteLink index ->
-            case ( model |> findLink index, model.links ) of
-                ( Just link, Loaded links ) ->
-                    ( { model
-                        | links = Loaded (links |> List.Extra.removeAt index)
-                        , state = Sending
-                      }
-                    , updateDocumentLink model.common link
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        InputNewName name ->
-            ( { model | newLink = { name = name, url = model.newLink.url } }, Cmd.none )
-
-        InputNewUrl url ->
-            ( { model | newLink = { name = model.newLink.name, url = url } }, Cmd.none )
-
-        CreateNewLink ->
-            ( { model | newLink = { name = "", url = "" }, state = Sending }
-            , newDocumentLink model.common model.newLink
+        UpdateNewEventForm newEvent ->
+            ( { model
+                | createForm =
+                    model.createForm
+                        |> mapLoaded (\f -> { f | newEvent = newEvent })
+              }
+            , Cmd.none
             )
+
+        UpdateNewGigForm newGig ->
+            ( { model
+                | createForm =
+                    model.createForm
+                        |> mapLoaded (\f -> { f | newGig = newGig })
+              }
+            , Cmd.none
+            )
+
+        CreateEvent ->
+            case model.createForm of
+                Loaded createForm ->
+                    case createForm.gigRequestId of
+                        Just requestId ->
+                            ( { model | state = Sending }
+                            , createEventFromGigRequest model.common createForm requestId
+                            )
+
+                        Nothing ->
+                            ( { model | state = Sending }
+                            , createEvent model.common createForm
+                            )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnCreateEvent (Ok newId) ->
+            ( model, Route.loadPage <| Route.Events { id = Just newId, tab = Nothing } )
+
+        OnCreateEvent (Err error) ->
+            ( { model | state = ErrorSending error }, Cmd.none )
 
 
 
 ---- DATA ----
 
 
-findLink : Int -> Model -> Maybe DocumentLink
-findLink index model =
-    case model.links of
-        Loaded links ->
-            links |> List.Extra.getAt index
-
-        _ ->
-            Nothing
+loadSemesters : Common -> Cmd Msg
+loadSemesters common =
+    getRequest common "/semesters" (Decode.list semesterDecoder)
+        |> Task.attempt OnLoadSemesters
 
 
-loadDocumentLinks : Common -> Cmd Msg
-loadDocumentLinks common =
-    getRequest common "/google_docs" (Decode.list documentLinkDecoder)
-        |> Task.attempt OnLoadLinks
-
-
-updateDocumentLink : Common -> DocumentLink -> Cmd Msg
-updateDocumentLink common link =
+loadGigRequest : Common -> Int -> Cmd Msg
+loadGigRequest common gigRequestId =
     let
         url =
-            "/google_docs/" ++ link.name
-
-        body =
-            link |> serializeDocumentLink
+            "/gig_requests/" ++ String.fromInt gigRequestId
     in
-    postRequest common url body
-        |> Task.attempt OnChangeLink
+    getRequest common url gigRequestDecoder
+        |> Task.attempt OnLoadGigRequest
 
 
-deleteDocumentLink : Common -> DocumentLink -> Cmd Msg
-deleteDocumentLink common link =
-    deleteRequest common ("/google_docs/" ++ link.name)
-        |> Task.attempt OnChangeLink
+createEventFromGigRequest : Common -> CreateEventForm -> Int -> Cmd Msg
+createEventFromGigRequest common createForm requestId =
+    let
+        url =
+            "/gig_requests/" ++ String.fromInt requestId ++ "/create_event"
+    in
+    postRequestFull common url (serializeEventForm common createForm) (Decode.field "id" Decode.int)
+        |> Task.attempt OnCreateEvent
 
 
-newDocumentLink : Common -> DocumentLink -> Cmd Msg
-newDocumentLink common link =
-    postRequest common "/google_docs" (serializeDocumentLink link)
-        |> Task.attempt OnChangeLink
+createEvent : Common -> CreateEventForm -> Cmd Msg
+createEvent common createForm =
+    postRequestFull common "/events" (serializeEventForm common createForm) (Decode.field "id" Decode.int)
+        |> Task.attempt OnCreateEvent
 
 
-serializeEventForm : NewEventForm -> Encode.Value
-serializeEventForm newEvent =
+serializeEventForm : Common -> CreateEventForm -> Encode.Value
+serializeEventForm common createForm =
+    let
+        event =
+            createForm.newEvent
+
+        gig =
+            createForm.newGig
+
+        encodeDatetime dateString timeString =
+            parseFormDateAndTimeString common dateString timeString
+                |> Maybe.map (posixToMillis >> Encode.int)
+                |> Maybe.withDefault Encode.null
+    in
     Encode.object
-        [ ( "name", Encode.string newEvent.name )
-        , ( "semester", Encode.string newEvent.semester )
-        , ( "type", Encode.string newEvent.type_ )
-        , ( "callTime", Encode.string )
+        -- event fields
+        [ ( "name", Encode.string event.name )
+        , ( "semester", Encode.string event.semester )
+        , ( "type", Encode.string event.type_ )
+        , ( "callTime", encodeDatetime event.callDate event.callTime )
+        , ( "releaseTime", encodeDatetime event.releaseDate event.releaseTime )
+        , ( "points", event.points |> Maybe.withDefault 5 |> Encode.int )
+        , ( "comments", Encode.string event.comments )
+        , ( "location", Encode.string event.location )
+        , ( "gigCount", Encode.bool event.gigCount )
+        , ( "defaultAttend", Encode.bool event.defaultAttend )
+
+        -- gig fields
+        , ( "performanceTime", encodeDatetime event.callDate gig.performanceTime )
+        , ( "uniform", gig.uniform |> Maybe.map (.id >> Encode.int) |> Maybe.withDefault Encode.null )
+        , ( "contactName", Encode.string gig.contactName )
+        , ( "contactEmail", Encode.string gig.contactEmail )
+        , ( "contactPhone", Encode.string gig.contactPhone )
+        , ( "price", Encode.null )
+        , ( "public", Encode.bool gig.public )
+        , ( "summary", Encode.string gig.summary )
+        , ( "description", Encode.string gig.description )
+        , ( "repeat", event.repeat |> periodToString |> Encode.string )
+        , ( "repeatUntil", encodeDatetime event.repeatUntil "00:00" )
         ]
 
-
-pub struct NewEvent {
-    pub name: String,
-    pub semester: String,
-    #[rename = "type"]
-    #[serde(rename = "type")]
-    pub type_: String,
-    #[serde(rename = "callTime")]
-    pub call_time: NaiveDateTime,
-    #[serde(rename = "releaseTime")]
-    pub release_time: Option<NaiveDateTime>,
-    pub points: i32,
-    #[serde(deserialize_with = "deser_opt_string")]
-    pub comments: Option<String>,
-    #[serde(deserialize_with = "deser_opt_string")]
-    pub location: Option<String>,
-    #[serde(default, rename = "gigCount")]
-    pub gig_count: Option<bool>,
-    #[serde(rename = "defaultAttend")]
-    pub default_attend: bool,
-    pub repeat: String,
-    #[serde(rename = "repeatUntil")]
-    pub repeat_until: Option<NaiveDate>,
-}
 
 
 ---- VIEW ----
@@ -236,229 +384,271 @@ pub struct NewEvent {
 
 view : Model -> Html Msg
 view model =
-    Basics.column
-        [ Basics.title "Document Links"
+    div
+        []
+        [ Basics.title "Create Event"
         , Basics.box
-            [ model.links |> Basics.remoteContent (\links -> div [] []) ]
-        ]
-
-
-linkRow : DocumentLink -> Html Msg
-linkRow link =
-    div []
-        [ text <| link.name ++ " "
-        , span [] []
-        ]
-
-
-type alias TextInput =
-    { title : String
-    , helpText : Maybe String
-    , value : String
-    , placeholder : String
-    , onInput : String -> Msg
-    }
-
-
-textInput : TextInput -> Html Msg
-textInput data =
-    fieldWrapper data
-        [ input
-            [ class "input"
-            , type_ "text"
-            , placeholder data.placeholder
-            , value data.value
-            , onInput data.onInput
+            [ model.createForm
+                |> Basics.remoteContent (createEventForm model.common model.semesters)
             ]
-            []
         ]
 
 
-type alias FieldInput a =
-    { a
-        | title : String
-        , helpText : Maybe String
-    }
-
-
-fieldWrapper : FieldInput a -> List (Html Msg) -> Html Msg
-fieldWrapper field content =
-    div [ class "field" ]
-        [ label [ class "label" ] [ text field.title ]
-        , div [ class "control" ] content
-        , field.helpText
-            |> Maybe.map (\help -> p [ class "help" ] [ text help ])
-            |> Maybe.withDefault (text "")
+createEventForm : Common -> RemoteData (List Semester) -> CreateEventForm -> Html Msg
+createEventForm common semesters createForm =
+    form [ onSubmit CreateEvent ]
+        [ Basics.columns
+            [ leftColumnInEventForm createForm
+            , middleColumnInEventForm common semesters createForm
+            , rightColumnInEventForm createForm
+            ]
         ]
 
 
+leftColumnInEventForm : CreateEventForm -> Html Msg
+leftColumnInEventForm createForm =
+    let
+        newEvent =
+            createForm.newEvent
 
--- <template>
---     <div id="create-event" class="columns">
---         <div class="column">
---             <div class="field">
---                 <label class="label">Event Name</label>
---                 <div class="control">
---                     <input class="input" type="text" placeholder="Flashmobbing the HOMO SEX IS SIN people">
---                 </div>
---                 <p class="help">Make it descriptive, make it short.</p>
---             </div>
---             <div class="field">
---                 <label class="label">Event Location</label>
---                 <div class="control">
---                     <input class="input" type="text" placeholder="Your mom's house 😂">
---                 </div>
---                 <p class="help">ha gottem</p>
---             </div>
---             <div class="field">
---                 <label class="label">Date of Event</label>
---                 <div class="control">
---                     <input class="input" type="date">
---                 </div>
---                 <p class="help"></p>
---             </div>
---             <div class="field">
---                 <label class="label">Event Time</label>
---                 <div class="control">
---                     <input class="input" type="time">
---                 </div>
---                 <p class="help">4:20 lamo</p>
---             </div>
---             <div class="field">
---                 <label class="label">Call Time</label>
---                 <div class="control">
---                     <input class="input" type="time">
---                 </div>
---                 <p class="help">4:20 lamo</p>
---             </div>
---             <div class="field">
---                 <label class="label">Release Time</label>
---                 <div class="control">
---                     <input class="input" type="time">
---                 </div>
---                 <p class="help">4:20 lamo</p>
---             </div>
---             <div class="field">
---             <label class="label">Release Date</label>
---             <div class="control">
---                 <input class="input" type="date">
---             </div>
---             <p class="help"></p>
---             </div>
---             <div class="field">
---             <label class="label">How many points is this worth?</label>
---             <div class="control">
---                 <input class="input" type="text" placeholder="69">
---             </div>
---             <p class="help"></p>
---             </div>
---         </div>
---         <div class="column">
---             <div class="field">
---                 <label class="label">Event Type</label>
---                 <div class="control">
---                     <label class="radio">
---                         <input type="radio" name="gigType" checked>Volunteer Gig
---                     </label><br>
---                     <label class="radio">
---                         <input type="radio" name="gigType">Tutti Gig
---                     </label><br>
---                     <label class="radio">
---                         <input type="radio" name="gigType">Sectional
---                     </label><br>
---                     <label class="radio">
---                         <input type="radio" name="gigType">Rehearsal
---                     </label><br>
---                     <label class="radio">
---                         <input type="radio" name="gigType">Ombuds
---                     </label><br>
---                     <label class="radio">
---                         <input type="radio" name="gigType">Other
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <label class="label">Semester</label>
---                 <div class="select is-loading control">
---                     <select>
---                         <option>Fall 2019</option>
---                         <option>Spring 2020</option>
---                     </select>
---                 </div>
---             </div>
---             <div class="field">
---             <label class="label">Event Summary</label>
---             <div class="control">
---                 <textarea class="textarea" placeholder="We're gonna get in there, we're gonna use our mouths, and we're gonna get out."></textarea>
---             </div>
---             <p class="help"></p>
---             </div>
---         </div>
---         <div class="column">
---             <div class="field">
---                 <div class="control">
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is public, so I want it to show up on the external site
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <div class="control">
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is for all sections
---                     </label>
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is for the T1 section
---                     </label>
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is for the T2 section
---                     </label>
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is for the B1 section
---                     </label>
---                     <label class="checkbox">
---                         <input type="checkbox" checked>This event is for the B2 section
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <div class="control">
---                     <label class="checkbox">
---                         <input type="checkbox">No one has to come to this event (forum, fundatory, etc)
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <div class="control">
---                     <label class="checkbox">
---                         <input type="checkbox">This event counts as a volunteer gig
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <div class="control">
---                     <label class="checkbox">
---                         <input type="checkbox">Members are required to attend (overrides any other setting)
---                     </label>
---                 </div>
---             </div>
---             <div class="field">
---                 <label class="label">Repeat</label>
---                 <div class="select is-loading control">
---                     <select>
---                         <option>None</option>
---                         <option>Weekly</option>
---                         <option>Monthly</option>
---                     </select>
---                 </div>
---             </div>
---             <div class="field">
---             <label class="label">Repeat until</label>
---             <div class="control">
---                 <input class="input" type="date">
---             </div>
---             <p class="help"></p>
---             </div>
---         </div>
---     </div>
--- </template>
+        newGig =
+            createForm.newGig
+    in
+    Basics.column
+        [ textInput
+            { title = "Event Name"
+            , value = newEvent.name
+            , placeholder = "Flashmobbing the HOMO SEX IS SIN people"
+            , helpText = Just "Make it descriptive, make it short."
+            , required = True
+            , onInput = \name -> UpdateNewEventForm { newEvent | name = name }
+            }
+        , textInput
+            { title = "Event Location"
+            , value = newEvent.location
+            , placeholder = "Your mom's house 😂"
+            , helpText = Just "ha gottem"
+            , required = False
+            , onInput = \location -> UpdateNewEventForm { newEvent | location = location }
+            }
+        , dateInput
+            { title = "Date of Event"
+            , value = newEvent.callDate
+            , placeholder = ""
+            , helpText = Nothing
+            , required = True
+            , onInput = \callDate -> UpdateNewEventForm { newEvent | callDate = callDate }
+            }
+        , timeInput
+            { title = "Call Time"
+            , value = newEvent.callTime
+            , placeholder = ""
+            , helpText = Just "4:20 lamo"
+            , required = True
+            , onInput = \callTime -> UpdateNewEventForm { newEvent | callTime = callTime }
+            }
+        , timeInput
+            { title = "Event Time"
+            , value = newGig.performanceTime
+            , placeholder = ""
+            , helpText = Just "4:21 lamo"
+            , required = False
+            , onInput = \performanceTime -> UpdateNewGigForm { newGig | performanceTime = performanceTime }
+            }
+        , timeInput
+            { title = "Release Time"
+            , value = newEvent.releaseTime
+            , placeholder = ""
+            , helpText = Just "4:22 lamo"
+            , required = False
+            , onInput = \releaseTime -> UpdateNewEventForm { newEvent | releaseTime = releaseTime }
+            }
+        , dateInput
+            { title = "Release Date"
+            , value = newEvent.releaseDate
+            , placeholder = ""
+            , helpText = Nothing
+            , required = False
+            , onInput = \releaseDate -> UpdateNewEventForm { newEvent | releaseDate = releaseDate }
+            }
+        , textInput
+            { title = "How many points is this worth?"
+            , value = newEvent.points |> Maybe.map String.fromInt |> Maybe.withDefault ""
+            , placeholder = "69"
+            , helpText = Nothing
+            , required = False
+            , onInput = \points -> UpdateNewEventForm { newEvent | points = points |> String.toInt }
+            }
+        ]
+
+
+middleColumnInEventForm : Common -> RemoteData (List Semester) -> CreateEventForm -> Html Msg
+middleColumnInEventForm common remoteSemesters createForm =
+    let
+        newEvent =
+            createForm.newEvent
+
+        newGig =
+            createForm.newGig
+
+        eventTypeOption selectedType eventType =
+            label [ class "radio" ]
+                [ input
+                    [ type_ "radio"
+                    , checked <| eventType.name == selectedType
+                    , onClick <| UpdateNewEventForm { newEvent | type_ = eventType.name }
+                    ]
+                    []
+                , text eventType.name
+                ]
+
+        ( semesters, semestersAreLoading ) =
+            case remoteSemesters of
+                Loaded sems ->
+                    ( sems |> List.map .name, "" )
+
+                Loading ->
+                    ( [ common.currentSemester.name ], " is-loading" )
+
+                _ ->
+                    ( [ common.currentSemester.name ], "" )
+    in
+    Basics.column
+        [ fieldWrapper { title = "Event Type", helpText = Nothing } <|
+            (common.info.eventTypes
+                |> List.map (eventTypeOption newEvent.type_)
+                |> List.intersperse (br [] [])
+            )
+        , div [ class "field" ]
+            [ label [ class "label" ] [ text "Semester" ]
+            , div [ class <| "select control" ++ semestersAreLoading ]
+                [ select
+                    [ onInput (\semester -> UpdateNewEventForm { newEvent | semester = semester }) ]
+                    (semesters |> List.map (\s -> option [ value s, selected (s == newEvent.semester) ] [ text s ]))
+                ]
+            ]
+        , div [ class "field" ]
+            [ label [ class "label" ] [ text "Uniform" ]
+            , div [ class "select control" ]
+                [ select
+                    [ onInput
+                        (\uniform ->
+                            UpdateNewGigForm
+                                { newGig
+                                    | uniform =
+                                        common.info.uniforms
+                                            |> List.find (\u -> u.name == uniform)
+                                }
+                        )
+                    ]
+                    (option
+                        [ value "", selected <| isNothing newGig.uniform ]
+                        [ text "(no uniform)" ]
+                        :: (common.info.uniforms
+                                |> List.map
+                                    (\u ->
+                                        option
+                                            [ value u.name
+                                            , selected
+                                                (newGig.uniform
+                                                    |> Maybe.map (\current -> current.id == u.id)
+                                                    |> Maybe.withDefault False
+                                                )
+                                            ]
+                                            [ text u.name ]
+                                    )
+                           )
+                    )
+                ]
+            ]
+        , fieldWrapper { title = "Event Summary", helpText = Nothing } <|
+            [ textarea
+                [ class "textarea"
+                , placeholder "We're gonna get in there, we're gonna use our mouths, and we're gonna get out."
+                , value newEvent.comments
+                , onInput (\comments -> UpdateNewEventForm { newEvent | comments = comments })
+                ]
+                []
+            ]
+        ]
+
+
+rightColumnInEventForm : CreateEventForm -> Html Msg
+rightColumnInEventForm createForm =
+    let
+        newEvent =
+            createForm.newEvent
+
+        newGig =
+            createForm.newGig
+
+        isPublicInput =
+            checkboxInput
+                { content = "This event is public, so I want it to show up on the external site"
+                , isChecked = newGig.public
+                , onChange = \public -> UpdateNewGigForm { newGig | public = public }
+                }
+
+        publicEventInputs =
+            if not newGig.public then
+                [ isPublicInput ]
+
+            else
+                [ isPublicInput
+                , textInput
+                    { title = "Public Summary"
+                    , value = newGig.summary
+                    , placeholder = "Friends? Countrymen? Bueller?"
+                    , helpText = Just "Careful, real people will see this"
+                    , required = False
+                    , onInput = \summary -> UpdateNewGigForm { newGig | summary = summary }
+                    }
+                , textareaInput
+                    { title = "Public Description"
+                    , value = newGig.description
+                    , placeholder = "We the people, in order to kick a more perfect ass, I don;t know where this is going"
+                    , helpText = Just "Careful, real people will see this"
+                    , required = False
+                    , onInput = \description -> UpdateNewGigForm { newGig | description = description }
+                    }
+                ]
+    in
+    Basics.column
+        (publicEventInputs
+            ++ [ checkboxInput
+                    { content = "No one has to come to this event (forum, fundatory, etc)"
+                    , isChecked = not newEvent.defaultAttend
+                    , onChange = \defaultNotAttend -> UpdateNewEventForm { newEvent | defaultAttend = not defaultNotAttend }
+                    }
+               , checkboxInput
+                    { content = "This event counts as a volunteer gig"
+                    , isChecked = newEvent.gigCount
+                    , onChange = \gigCount -> UpdateNewEventForm { newEvent | gigCount = gigCount }
+                    }
+               , div [ class "field" ]
+                    [ label [ class "label" ] [ text "Repeat" ]
+                    , div [ class "select control" ]
+                        [ select
+                            [ value <| periodToString newEvent.repeat
+                            , onInput (\period -> UpdateNewEventForm { newEvent | repeat = stringToPeriod period })
+                            ]
+                            (allRepeatPeriods
+                                |> List.map
+                                    (\p ->
+                                        option [ value <| periodToString p ] [ text <| (periodToString p |> capitalizeFirstChar) ]
+                                    )
+                            )
+                        ]
+                    ]
+               , dateInput
+                    { title = "Repeat Until"
+                    , value = newEvent.repeatUntil
+                    , placeholder = ""
+                    , helpText = Nothing
+                    , required = newEvent.repeat /= NoRepeat
+                    , onInput = \repeatUntil -> UpdateNewEventForm { newEvent | repeatUntil = repeatUntil }
+                    }
+               , br [] []
+               , button [ type_ "submit", class "button is-primary" ] [ text "Yeehaw" ]
+               ]
+        )

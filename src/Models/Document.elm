@@ -1,4 +1,4 @@
-module Models.Document exposing (Announcement, DocumentLink, MeetingMinutes, announcementDecoder, documentLinkDecoder, meetingMinutesDecoder)
+module Models.Document exposing (Announcement, MeetingMinutes, announcementDecoder, meetingMinutesDecoder)
 
 import Json.Decode as Decode exposing (Decoder, bool, int, nullable, string)
 import Json.Decode.Pipeline exposing (optional, required)
@@ -25,18 +25,6 @@ meetingMinutesDecoder =
         |> optional "private" (nullable string) Nothing
 
 
-type alias DocumentLink =
-    { name : String
-    , url : String
-    }
-
-
-documentLinkDecoder =
-    Decode.succeed DocumentLink
-        |> required "name" string
-        |> required "url" string
-
-
 type alias Announcement =
     { id : Int
     , member : Maybe String
@@ -47,6 +35,7 @@ type alias Announcement =
     }
 
 
+announcementDecoder : Decoder Announcement
 announcementDecoder =
     Decode.succeed Announcement
         |> required "id" int

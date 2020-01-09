@@ -40,11 +40,6 @@ checkString x =
     checkValue x string
 
 
-checkInt : Int -> Decoder ()
-checkInt x =
-    checkValue x Decode.int
-
-
 greaseErrorDecoder : Decoder GreaseError
 greaseErrorDecoder =
     oneOf
@@ -79,7 +74,7 @@ greaseErrorDecoder =
 parseResponse : Decoder a -> Response String -> Result GreaseError a
 parseResponse decoder response =
     case response of
-        Http.BadUrl_ url ->
+        Http.BadUrl_ _ ->
             Err (UnknownError ( Nothing, "bad url" ))
 
         Http.Timeout_ ->
@@ -95,7 +90,7 @@ parseResponse decoder response =
                     |> Result.withDefault (UnknownError ( Just metadata.statusCode, body ))
                 )
 
-        Http.GoodStatus_ metadata body ->
+        Http.GoodStatus_ _ body ->
             body
                 |> decodeString decoder
                 |> Result.mapError

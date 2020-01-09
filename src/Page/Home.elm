@@ -1,23 +1,20 @@
 module Page.Home exposing (Model, Msg(..), attendanceMessage, gradesBlock, init, loadEvents, pastAndFutureEvents, upcomingEvents, update, view, volunteerism)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Datetime exposing (dateFormatter, fullDateTimeFormatter, timeFromNow)
 import Error exposing (GreaseResult)
-import Graph exposing (graphGrades)
-import Html exposing (Html, a, br, button, div, em, form, h1, i, img, input, label, p, section, span, strong, text)
-import Html.Attributes exposing (attribute, class, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
+import Graph exposing (HoveredEvent, graphGrades)
+import Html exposing (Html, a, br, div, em, i, p, section, span, strong, text)
+import Html.Attributes exposing (class, href, id, style)
 import Json.Decode as Decode
-import Json.Encode as Encode
-import List.Extra exposing (find, last)
+import List.Extra exposing (last)
 import Maybe.Extra exposing (filter, isJust)
 import Models.Event exposing (FullEvent, Grades, fullEventDecoder)
 import Models.Info exposing (Semester)
-import Route exposing (Route)
+import Route
 import Task
 import Time exposing (Zone, posixToMillis)
-import Utils exposing (Common, RemoteData(..), dateFormatter, fullDateTimeFormatter, getRequest, permittedTo, resultToRemote, romanNumeral, setToken, timeFromNow)
+import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote, romanNumeral)
 
 
 
@@ -27,7 +24,7 @@ import Utils exposing (Common, RemoteData(..), dateFormatter, fullDateTimeFormat
 type alias Model =
     { common : Common
     , events : RemoteData (List FullEvent)
-    , hoveredEvent : Maybe FullEvent
+    , hoveredEvent : Maybe HoveredEvent
     }
 
 
@@ -42,7 +39,7 @@ init common =
 
 type Msg
     = OnLoadEvents (GreaseResult (List FullEvent))
-    | HoverOverEvent (Maybe FullEvent)
+    | HoverOverEvent (Maybe HoveredEvent)
     | ClearHover
 
 
@@ -63,7 +60,7 @@ update msg model =
                             Nothing
 
                         ( Just newEvent, Just currentEvent ) ->
-                            Just newEvent |> Maybe.Extra.filter (\new -> new.id /= currentEvent.id)
+                            Just newEvent |> Maybe.Extra.filter (\new -> new.event.id /= currentEvent.event.id)
             in
             ( { model | hoveredEvent = hoveredEvent }, Cmd.none )
 
@@ -83,27 +80,7 @@ loadEvents common =
 
 pastAndFutureEvents : Common -> List FullEvent -> ( List FullEvent, List FullEvent )
 pastAndFutureEvents common allEvents =
-    let
-        allGrades =
-            common.user
-                |> Maybe.andThen .grades
-                |> Maybe.map .changes
-                |> Maybe.withDefault []
-
-        mostRecentPastEvent =
-            allGrades
-                |> List.Extra.last
-                |> Maybe.map .event
-
-        mostRecentCallTime =
-            mostRecentPastEvent |> Maybe.map .callTime
-    in
-    case mostRecentCallTime of
-        Just callTime ->
-            allEvents |> List.partition (\e -> posixToMillis e.callTime <= posixToMillis callTime)
-
-        _ ->
-            ( allEvents, [] )
+    allEvents |> List.partition (\e -> posixToMillis e.callTime <= posixToMillis common.now)
 
 
 attendanceMessage : Maybe Grades -> String
@@ -174,7 +151,7 @@ gradesBlock semester grades pastEvents =
             pastEvents
                 |> List.Extra.last
                 |> Maybe.andThen .attendance
-                |> Maybe.map .partialScore
+                |> Maybe.andThen .partialScore
                 |> Maybe.withDefault 100.0
 
         attendanceIssueEmail =
@@ -182,8 +159,8 @@ gradesBlock semester grades pastEvents =
 
         scoreText =
             p []
-                [ text "Right now you have a"
-                , strong [] [ text <| String.fromFloat finalGrade ]
+                [ text "Right now you have a "
+                , strong [] [ text <| String.fromFloat (roundToTwoDigits finalGrade) ]
                 , text "."
                 , br [] []
                 , span [ class "has-text-grey-light is-italic" ]
@@ -210,22 +187,11 @@ gradesBlock semester grades pastEvents =
     in
     section [ class "section" ]
         [ div [ class "container", id "grades-container" ]
-            ([ Basics.title "Score"
-             , p []
-                [ text "Right now you have a "
-                , strong [] [ text <| String.fromFloat (roundToTwoDigits finalGrade) ]
-                , text "."
-                , br [] []
-                , span [ class "has-text-grey-light is-italic" ]
-                    [ text <| attendanceMessage grades ]
-                ]
-             ]
-                ++ graph
-            )
+            ([ Basics.title "Score", scoreText ] ++ graph)
         ]
 
 
-eventHoverBox : Common -> Maybe FullEvent -> Html Msg
+eventHoverBox : Common -> Maybe HoveredEvent -> Html Msg
 eventHoverBox common hoveredEvent =
     case hoveredEvent of
         Nothing ->
@@ -234,30 +200,33 @@ eventHoverBox common hoveredEvent =
         Just event ->
             let
                 gradeChange =
-                    event.attendance
-                        |> Maybe.map .gradeChange
+                    event.event.attendance
+                        |> Maybe.andThen .gradeChange
                         |> Maybe.withDefault 0.0
                         |> roundToTwoDigits
                         |> String.fromFloat
 
                 partialScore =
-                    event.attendance
-                        |> Maybe.map .partialScore
+                    event.event.attendance
+                        |> Maybe.andThen .partialScore
                         |> Maybe.withDefault 0.0
                         |> roundToTwoDigits
                         |> String.fromFloat
 
                 changeReason =
-                    event.attendance
-                        |> Maybe.map .gradeChangeReason
+                    event.event.attendance
+                        |> Maybe.andThen .gradeChangeReason
                         |> Maybe.withDefault ""
             in
             div
                 [ class "box shown"
                 , style "position" "absolute"
+                , style "top" (String.fromInt (event.y + 10) ++ "px")
+                , style "left" (String.fromInt event.x ++ "px")
+                , style "transform" "translateX(-50%)"
                 ]
-                [ p [] [ strong [] [ text event.name ] ]
-                , p [] [ text (event.callTime |> fullDateTimeFormatter common.timeZone) ]
+                [ p [] [ strong [] [ text event.event.name ] ]
+                , p [] [ text (event.event.callTime |> fullDateTimeFormatter common.timeZone) ]
                 , p []
                     [ text <| gradeChange ++ " points "
                     , span [ class "icon is-primary has-text-primary" ]
@@ -275,11 +244,11 @@ upcomingEvents common futureEvents =
             p []
                 [ span [ class "tag is-primary is-rounded" ]
                     [ text <| String.fromInt (index + 1) ]
+                , text " "
                 , a [ Route.href <| Route.Events { id = Just event.id, tab = Nothing } ]
-                    [ text event.name
-                    , text "–"
-                    , text <| timeFromNow common event.callTime
-                    ]
+                    [ text event.name ]
+                , text " – "
+                , text <| timeFromNow common event.callTime
                 ]
 
         eventList =

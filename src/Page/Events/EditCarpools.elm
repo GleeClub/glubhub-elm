@@ -2,17 +2,16 @@ module Page.Events.EditCarpools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, article, b, br, button, div, i, li, section, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (class, colspan, id, style)
+import Html exposing (Html, article, button, div, i, section, span, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, colspan, style)
 import Html.Events exposing (onClick)
-import Http
 import Json.Decode as Decode
-import List.Extra exposing (find)
+import Json.Encode as Encode
+import List.Extra exposing (find, uncons)
 import Models.Event exposing (Event, EventAttendee, EventCarpool, Member, SimpleAttendance, UpdatedCarpool, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder)
-import Route exposing (Route)
+import Route
 import Task
-import Time exposing (Posix)
-import Utils exposing (Common, RemoteData(..), apiUrl, getRequest, handleJsonResponse)
+import Utils exposing (Common, RemoteData(..), alert, fullName, getRequest, mapLoaded, postRequest, resultToRemote)
 
 
 
@@ -26,16 +25,22 @@ type alias CarpoolData =
     }
 
 
+type MemberSelection
+    = UnassignedMembers (List Member) -- covers nobody selected, too
+    | Driver UpdatedCarpool
+    | Passengers UpdatedCarpool (List Member)
+
+
 type alias Model =
     { common : Common
     , data : RemoteData CarpoolData
-    , selection : List String
+    , selection : MemberSelection
     }
 
 
 init : Common -> Int -> ( Model, Cmd Msg )
 init common eventId =
-    ( { common = common, data = Loading, selection = [] }, loadData common eventId )
+    ( { common = common, data = Loading, selection = UnassignedMembers [] }, loadData common eventId )
 
 
 
@@ -44,158 +49,349 @@ init common eventId =
 
 type Msg
     = OnLoadData (GreaseResult CarpoolData)
-    | ClickMember Member
-    | ClickEmptyPassengerList Member
+    | ClickUnassignedMember Member
+    | ClickEmptyUnassignedMemberList
+    | ClickDriver UpdatedCarpool
+    | ClickPassenger UpdatedCarpool Member
+    | ClickEmptyPassengerList UpdatedCarpool
     | AddNewCarpool
-    | ClickEmptyMemberList
+    | SaveCarpools
+    | OnSaveCarpools (GreaseResult ())
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        OnLoadData (Ok data) ->
-            ( { model | data = Loaded data }, Cmd.none )
+        OnLoadData result ->
+            ( { model | data = resultToRemote result }, Cmd.none )
 
-        OnLoadData (Err error) ->
-            ( { model | data = Failure error }, Cmd.none )
+        SaveCarpools ->
+            case model.data of
+                Loaded data ->
+                    ( model, updateCarpools model.common data )
 
-        ClickMember member ->
-            ( clickMember model member, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
-        ClickEmptyPassengerList driver ->
-            ( clickEmptyPassengerList driver model, Cmd.none )
+        OnSaveCarpools (Ok _) ->
+            case model.data of
+                Loaded data ->
+                    ( model
+                    , Route.loadPage <|
+                        Route.Events
+                            { id = Just data.event.id, tab = Just Route.EventCarpools }
+                    )
 
-        ClickEmptyMemberList ->
-            ( { model | selection = [] }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
+
+        OnSaveCarpools (Err _) ->
+            -- TODO: Display an actual error.
+            ( model, alert "We failed to update the carpools. Please try again." )
+
+        ClickUnassignedMember member ->
+            case model.selection of
+                Driver carpool ->
+                    ( unassignCarpoolDriver model carpool, Cmd.none )
+
+                Passengers carpool passengers ->
+                    ( unassignCarpoolPassengers model carpool passengers, Cmd.none )
+
+                UnassignedMembers members ->
+                    if members |> List.any (\m -> m.email == member.email) then
+                        ( { model | selection = UnassignedMembers (members |> List.filter (\m -> m.email /= member.email)) }, Cmd.none )
+
+                    else
+                        ( { model | selection = UnassignedMembers (members ++ [ member ]) }, Cmd.none )
+
+        ClickEmptyUnassignedMemberList ->
+            case model.selection of
+                Driver carpool ->
+                    ( unassignCarpoolDriver model carpool, Cmd.none )
+
+                Passengers carpool passengers ->
+                    ( unassignCarpoolPassengers model carpool passengers, Cmd.none )
+
+                UnassignedMembers _ ->
+                    ( model, Cmd.none )
+
+        ClickDriver carpool ->
+            case model.selection of
+                Driver otherCarpool ->
+                    let
+                        carpoolMapper c =
+                            if c.driver.email == carpool.driver.email then
+                                { c | driver = otherCarpool.driver }
+
+                            else if c.driver.email == otherCarpool.driver.email then
+                                { c | driver = carpool.driver }
+
+                            else
+                                c
+                    in
+                    ( updateCarpoolsAndClearSelection model (List.map carpoolMapper), Cmd.none )
+
+                Passengers otherCarpool passengers ->
+                    if otherCarpool.driver.email == carpool.driver.email then
+                        ( model, Cmd.none )
+
+                    else
+                        case passengers |> uncons of
+                            Just ( firstPassenger, [] ) ->
+                                let
+                                    carpoolMapper c =
+                                        if c.driver.email == carpool.driver.email then
+                                            { c
+                                                | driver = firstPassenger
+                                                , passengers =
+                                                    c.passengers
+                                                        |> List.filter (\p -> p.email /= firstPassenger.email)
+                                            }
+
+                                        else
+                                            c
+                                in
+                                ( updateCarpoolsAndClearSelection model (List.map carpoolMapper), Cmd.none )
+
+                            _ ->
+                                ( model, Cmd.none )
+
+                UnassignedMembers members ->
+                    if List.isEmpty members then
+                        ( { model | selection = Driver carpool }, Cmd.none )
+
+                    else
+                        case members |> uncons of
+                            Just ( firstMember, [] ) ->
+                                let
+                                    carpoolMapper c =
+                                        if c.driver.email == carpool.driver.email then
+                                            { c | driver = firstMember }
+
+                                        else
+                                            c
+                                in
+                                ( updateCarpoolsAndClearSelection model (List.map carpoolMapper), Cmd.none )
+
+                            _ ->
+                                ( model, Cmd.none )
+
+        ClickPassenger carpool passenger ->
+            case model.selection of
+                Driver otherCarpool ->
+                    if List.isEmpty otherCarpool.passengers then
+                        ( updateCarpoolsAndClearSelection model
+                            (List.concatMap
+                                (\c ->
+                                    if c.driver.email == otherCarpool.driver.email then
+                                        []
+
+                                    else if c.driver.email == carpool.driver.email then
+                                        [ { c | passengers = c.passengers ++ [ otherCarpool.driver ] } ]
+
+                                    else
+                                        [ c ]
+                                )
+                            )
+                        , Cmd.none
+                        )
+
+                    else
+                        ( model, Cmd.none )
+
+                Passengers otherCarpool passengers ->
+                    if otherCarpool.driver.email == carpool.driver.email then
+                        if passengers |> List.any (\p -> p.email == passenger.email) then
+                            ( { model | selection = Passengers otherCarpool (passengers |> List.filter (\p -> p.email /= passenger.email)) }, Cmd.none )
+
+                        else
+                            ( { model | selection = Passengers otherCarpool (passengers ++ [ passenger ]) }, Cmd.none )
+
+                    else
+                        ( updateCarpoolsAndClearSelection model
+                            (List.map
+                                (\c ->
+                                    if c.driver.email == carpool.driver.email then
+                                        { c | passengers = c.passengers ++ passengers }
+
+                                    else if c.driver.email == otherCarpool.driver.email then
+                                        { c | passengers = c.passengers |> List.filter (\p -> passengers |> List.all (\cp -> cp.email /= p.email)) }
+
+                                    else
+                                        c
+                                )
+                            )
+                        , Cmd.none
+                        )
+
+                UnassignedMembers members ->
+                    if List.isEmpty members then
+                        ( { model | selection = Passengers carpool [ passenger ] }, Cmd.none )
+
+                    else
+                        ( updateCarpoolsAndClearSelection model
+                            (List.map
+                                (\c ->
+                                    if c.driver.email == carpool.driver.email then
+                                        { c | passengers = c.passengers ++ members }
+
+                                    else
+                                        c
+                                )
+                            )
+                        , Cmd.none
+                        )
+
+        ClickEmptyPassengerList carpool ->
+            case model.selection of
+                Driver otherCarpool ->
+                    if List.isEmpty otherCarpool.passengers then
+                        ( updateCarpoolsAndClearSelection model
+                            (List.concatMap
+                                (\c ->
+                                    if c.driver.email == otherCarpool.driver.email then
+                                        []
+
+                                    else if c.driver.email == carpool.driver.email then
+                                        [ { c | passengers = c.passengers ++ [ otherCarpool.driver ] } ]
+
+                                    else
+                                        [ c ]
+                                )
+                            )
+                        , Cmd.none
+                        )
+
+                    else
+                        ( model, Cmd.none )
+
+                Passengers otherCarpool passengers ->
+                    ( updateCarpoolsAndClearSelection model
+                        (List.map
+                            (\c ->
+                                if c.driver.email == carpool.driver.email then
+                                    { c | passengers = c.passengers ++ passengers }
+
+                                else if c.driver.email == otherCarpool.driver.email then
+                                    { c | passengers = c.passengers |> List.filter (\p -> passengers |> List.all (\cp -> cp.email /= p.email)) }
+
+                                else
+                                    c
+                            )
+                        )
+                    , Cmd.none
+                    )
+
+                UnassignedMembers members ->
+                    ( updateCarpoolsAndClearSelection model
+                        (List.map
+                            (\c ->
+                                if c.driver.email == carpool.driver.email then
+                                    { c | passengers = c.passengers ++ members }
+
+                                else
+                                    c
+                            )
+                        )
+                    , Cmd.none
+                    )
 
         AddNewCarpool ->
             ( addNewCarpool model, Cmd.none )
 
 
+unassignCarpoolPassengers : Model -> UpdatedCarpool -> List Member -> Model
+unassignCarpoolPassengers model carpool passengers =
+    let
+        mapCarpool givenCarpool =
+            if givenCarpool.driver.email == carpool.driver.email then
+                { givenCarpool | passengers = givenCarpool.passengers |> filterPassengers }
+
+            else
+                givenCarpool
+
+        filterPassengers =
+            List.filter (\p -> passengers |> List.all (\cp -> cp.email /= p.email))
+    in
+    updateCarpoolsAndClearSelection model (List.map mapCarpool)
+
+
+unassignCarpoolDriver : Model -> UpdatedCarpool -> Model
+unassignCarpoolDriver model carpool =
+    if List.isEmpty carpool.passengers then
+        let
+            mapCarpools =
+                List.filter (\c -> c.driver.email /= carpool.driver.email)
+        in
+        updateCarpoolsAndClearSelection model mapCarpools
+
+    else
+        model
+
+
+updateCarpoolsAndClearSelection : Model -> (List UpdatedCarpool -> List UpdatedCarpool) -> Model
+updateCarpoolsAndClearSelection model carpoolsMapper =
+    let
+        mapData =
+            mapLoaded
+                (\data ->
+                    { data
+                        | carpools = data.carpools |> carpoolsMapper
+                    }
+                )
+    in
+    { model
+        | selection = UnassignedMembers []
+        , data = model.data |> mapData
+    }
+
+
 addNewCarpool : Model -> Model
 addNewCarpool model =
-    case model.data of
-        Loaded data ->
-            case model.selection of
-                firstEmail :: [] ->
-                    case
-                        remainingMembers data.carpools model.common.members
-                            |> List.Extra.find (\member -> member.email == firstEmail)
-                    of
-                        Just newDriver ->
-                            let
-                                carpools =
-                                    data.carpools
-                                        ++ [ { id = Nothing, driver = newDriver, passengers = [] } ]
-                            in
-                            { model | selection = [], data = Loaded { data | carpools = carpools } }
-
-                        Nothing ->
-                            model
+    case model.selection of
+        UnassignedMembers members ->
+            case members |> uncons of
+                Just ( firstMember, [] ) ->
+                    updateCarpoolsAndClearSelection model
+                        (\carpools ->
+                            carpools
+                                ++ [ { id = Nothing
+                                     , driver = firstMember
+                                     , passengers = []
+                                     }
+                                   ]
+                        )
 
                 _ ->
                     model
 
-        _ ->
-            model
+        Passengers carpool passengers ->
+            case passengers |> uncons of
+                Just ( firstPassenger, [] ) ->
+                    updateCarpoolsAndClearSelection model
+                        (\carpools ->
+                            (carpools
+                                |> List.map
+                                    (\c ->
+                                        if c.driver.email == carpool.driver.email then
+                                            { c | passengers = c.passengers |> List.filter (\p -> p.email /= firstPassenger.email) }
 
-
-clickEmptyPassengerList : Member -> Model -> Model
-clickEmptyPassengerList driver model =
-    model
-
-
-clickMember : Model -> Member -> Model
-clickMember model member =
-    case model.data of
-        Loaded data ->
-            let
-                membersNotInCarpools =
-                    remainingMembers data.carpools model.common.members
-            in
-            if List.isEmpty model.selection then
-                -- if the current selection is empty
-                { model | selection = [ member.email ] }
-
-            else if model.selection |> List.any ((==) member.email) then
-                -- or if they select a currently selected member
-                { model | selection = model.selection |> List.filter ((/=) member.email) }
-
-            else if model.selection |> List.all (\email -> membersNotInCarpools |> List.any (\m -> m.email == email)) then
-                -- or if the current selection is all unassigned members
-                allSelectedAreUnassigned model data member membersNotInCarpools
-
-            else
-                -- or if the selected member is a driver
-                case
-                    model.selection
-                        |> List.head
-                        |> Maybe.andThen
-                            (\email ->
-                                data.carpools
-                                    |> List.Extra.find (\carpool -> carpool.driver.email == email)
+                                        else
+                                            c
+                                    )
                             )
-                of
-                    Nothing ->
-                        model
+                                ++ [ { id = Nothing
+                                     , driver = firstPassenger
+                                     , passengers = []
+                                     }
+                                   ]
+                        )
 
-                    Just carpool ->
-                        if (membersNotInCarpools |> List.any (\m -> m.email == member.email)) && List.isEmpty carpool.passengers then
-                            -- and they select the unassigned member list
-                            { model | selection = [], data = Loaded { data | carpools = data.carpools |> List.Extra.remove carpool } }
+                _ ->
+                    model
 
-                        else
-                            model
-
-        _ ->
+        Driver carpool ->
             model
-
-
-allSelectedAreUnassigned : Model -> CarpoolData -> Member -> List Member -> Model
-allSelectedAreUnassigned model data member membersNotInCarpools =
-    if membersNotInCarpools |> List.any (\m -> m.email == member.email) then
-        -- and they select another unassigned member
-        { model | selection = member.email :: model.selection }
-
-    else
-        -- and they select a carpool
-        case data.carpools |> List.Extra.find (memberInCarpool member.email) of
-            Nothing ->
-                model
-
-            Just carpool ->
-                if carpool.driver.email == member.email then
-                    -- specifically, the driver
-                    case model.selection |> collectSelectedMembers model.common.members of
-                        firstSelected :: [] ->
-                            -- only update the driver if a single member is selected
-                            let
-                                updateCarpool c =
-                                    if c == carpool then
-                                        { c | driver = firstSelected }
-
-                                    else
-                                        c
-                            in
-                            { model | selection = [], data = Loaded { data | carpools = data.carpools |> List.map updateCarpool } }
-
-                        _ ->
-                            model
-
-                else
-                    -- specifically, the passengers
-                    let
-                        selectedMembers =
-                            collectSelectedMembers model.common.members model.selection
-
-                        updateCarpool c =
-                            if c == carpool then
-                                { c | passengers = c.passengers ++ selectedMembers }
-
-                            else
-                                c
-                    in
-                    { model | selection = [], data = Loaded { data | carpools = data.carpools |> List.map updateCarpool } }
 
 
 
@@ -225,6 +421,25 @@ loadData common eventId =
                 |> Task.map cleanupCarpools
     in
     Task.attempt OnLoadData <| Task.map3 CarpoolData getEvent getAttendance getCarpools
+
+
+updateCarpools : Common -> CarpoolData -> Cmd Msg
+updateCarpools common data =
+    let
+        url =
+            "/events/" ++ String.fromInt data.event.id ++ "/carpools"
+    in
+    postRequest common url (data.carpools |> Encode.list serializeCarpool)
+        |> Task.attempt OnSaveCarpools
+
+
+serializeCarpool : UpdatedCarpool -> Encode.Value
+serializeCarpool carpool =
+    Encode.object
+        [ ( "id", carpool.id |> Maybe.map Encode.int |> Maybe.withDefault Encode.null )
+        , ( "driver", Encode.string carpool.driver.email )
+        , ( "passengers", carpool.passengers |> Encode.list (\p -> Encode.string p.email) )
+        ]
 
 
 cleanupCarpools : List EventCarpool -> List UpdatedCarpool
@@ -303,7 +518,8 @@ memberListAndCarpools model data =
 
         remainingMemberTable =
             if List.isEmpty membersLeft then
-                div [ onClick ClickEmptyMemberList ] [ i [] [ text "That's everyone!" ] ]
+                div [ onClick ClickEmptyUnassignedMemberList ]
+                    [ i [] [ text "That's everyone!" ] ]
 
             else
                 table [ class "table" ]
@@ -318,7 +534,7 @@ memberListAndCarpools model data =
                                     , isDriver = False
                                     , includeIcon = False
                                     , selection = model.selection
-                                    , onClick = ClickMember
+                                    , onClick = ClickUnassignedMember
                                     }
                             )
                     )
@@ -331,21 +547,33 @@ memberListAndCarpools model data =
                     [ remainingMemberTable ]
                 ]
             , Basics.column
-                [ Basics.box <|
-                    (data.carpools |> List.map (carpoolTable model data))
-                        ++ [ button [ class "button is-fullwidth", onClick AddNewCarpool ] [ text "Pick a driver and then click here to add new carpool" ] ]
+                [ Basics.box
+                    [ div [ style "width" "100%", style "padding-bottom" "10px" ]
+                        [ Basics.linkButton "Cancel" <|
+                            Route.Events { id = Just data.event.id, tab = Nothing }
+                        , button
+                            [ class "button is-pulled-right is-primary"
+                            , onClick SaveCarpools
+                            ]
+                            [ text "Update Carpools" ]
+                        ]
+                    , table [ class "table", style "width" "100%" ]
+                        (data.carpools |> List.concatMap (carpoolPartialTable model data))
+                    , button [ class "button is-fullwidth", onClick AddNewCarpool ]
+                        [ text "Pick a driver and then click here to add new carpool" ]
+                    ]
                 ]
             ]
         ]
 
 
-carpoolTable : Model -> CarpoolData -> UpdatedCarpool -> Html Msg
-carpoolTable model data carpool =
+carpoolPartialTable : Model -> CarpoolData -> UpdatedCarpool -> List (Html Msg)
+carpoolPartialTable model data carpool =
     let
         passengerRows =
             if List.isEmpty carpool.passengers then
                 [ tr []
-                    [ td [ colspan 5, style "width" "100%", onClick <| ClickEmptyPassengerList carpool.driver ]
+                    [ td [ colspan 5, style "width" "100%", onClick <| ClickEmptyPassengerList carpool ]
                         [ article [ class "message" ]
                             [ div [ class "message-body" ]
                                 [ text "It sure is lonely here..." ]
@@ -366,25 +594,24 @@ carpoolTable model data carpool =
                                 , isDriver = False
                                 , includeIcon = index == 0
                                 , selection = model.selection
-                                , onClick = ClickMember
+                                , onClick = ClickPassenger carpool
                                 }
                         )
     in
-    table [ class "table" ]
-        [ thead []
-            [ carpoolMemberRow
-                { member = carpool.driver
-                , common = model.common
-                , event = data.event
-                , attendance = findAttendance data carpool.driver.email
-                , isDriver = True
-                , includeIcon = True
-                , selection = model.selection
-                , onClick = ClickMember
-                }
-            ]
-        , tbody [] passengerRows
+    [ thead []
+        [ carpoolMemberRow
+            { member = carpool.driver
+            , common = model.common
+            , event = data.event
+            , attendance = findAttendance data carpool.driver.email
+            , isDriver = True
+            , includeIcon = True
+            , selection = model.selection
+            , onClick = \_ -> ClickDriver carpool
+            }
         ]
+    , tbody [] passengerRows
+    ]
 
 
 type alias CarpoolMemberRow =
@@ -394,7 +621,7 @@ type alias CarpoolMemberRow =
     , attendance : Maybe SimpleAttendance
     , isDriver : Bool
     , includeIcon : Bool
-    , selection : List String
+    , selection : MemberSelection
     , onClick : Member -> Msg
     }
 
@@ -402,12 +629,12 @@ type alias CarpoolMemberRow =
 carpoolMemberRow : CarpoolMemberRow -> Html Msg
 carpoolMemberRow memberRow =
     let
-        col width =
+        col =
             if memberRow.isDriver then
-                th [ style "min-width" width, style "width" width ]
+                th []
 
             else
-                td [ style "min-width" width, style "width" width, style "border-bottom-width" "0px" ]
+                td [ style "border-bottom-width" "0px" ]
 
         icon =
             span [ class "icon" ]
@@ -424,7 +651,18 @@ carpoolMemberRow memberRow =
                     []
                 ]
 
-        passengers =
+        selection =
+            case memberRow.selection of
+                UnassignedMembers members ->
+                    members
+
+                Driver carpool ->
+                    [ carpool.driver ]
+
+                Passengers _ passengers ->
+                    passengers
+
+        passengerCount =
             if memberRow.member.passengers == 0 then
                 ""
 
@@ -437,21 +675,21 @@ carpoolMemberRow memberRow =
         , style "width" "100%"
         , style "min-width" "100%"
         , class <|
-            if memberRow.selection |> List.any (\email -> email == memberRow.member.email) then
+            if selection |> List.any (\member -> member.email == memberRow.member.email) then
                 "is-selected"
 
             else
                 ""
         ]
-        [ col "10%"
+        [ col
             [ if memberRow.includeIcon then
                 icon
 
               else
                 text ""
             ]
-        , col "40%" [ text memberRow.member.fullName ]
-        , col "30%" [ text memberRow.member.location ]
-        , col "10%" [ text passengers ]
-        , col "10%" [ Basics.attendanceIcon memberRow.common memberRow.event memberRow.attendance ]
+        , col [ text (memberRow.member |> fullName) ]
+        , col [ text memberRow.member.location ]
+        , col [ text passengerCount ]
+        , col [ Basics.attendanceIcon memberRow.common memberRow.event memberRow.attendance ]
         ]

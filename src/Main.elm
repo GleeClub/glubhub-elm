@@ -1,42 +1,44 @@
-module Main exposing (init, main, subscriptions)
-
--- import Page.ConfirmAccount
+module Main exposing (main)
 
 import Browser exposing (UrlRequest)
 import Browser.Navigation as Nav exposing (Key)
-import Components.Basics exposing (spinner)
-import Html exposing (Html, a, button, div, i, nav, section, span, text)
-import Html.Attributes exposing (attribute, class, href, id, style)
-import Html.Events exposing (onClick)
-import Http
-import Json.Decode as Decode exposing (Decoder, decodeString, maybe, nullable, string)
+import Components.Basics as Basics
+import Components.ConfirmAccount as ConfirmAccount exposing (confirmAccountHeader)
+import Components.NavBar exposing (navBar)
+import Error exposing (GreaseResult)
+import Html exposing (Html, div, text)
+import Html.Attributes exposing (class, id, style)
+import Json.Decode as Decode exposing (nullable, string)
 import Maybe.Extra exposing (isJust, isNothing)
-import Models.Event exposing (Member, memberDecoder)
-import Models.Info exposing (Info, emptyInfo, emptySemester, infoDecoder, semesterDecoder)
+import Models.Event exposing (memberDecoder)
+import Models.Info exposing (infoDecoder, semesterDecoder)
 import Page.Admin
 import Page.EditProfile
 import Page.Events
 import Page.Events.EditCarpools as EditCarpools
+import Page.ForgotPassword
 import Page.Home
 import Page.Login
 import Page.Minutes
 import Page.Profile
 import Page.Repertoire
+import Page.ResetPassword
 import Page.Roster
 import Route exposing (Route(..))
 import Task
 import Time exposing (Posix, here, now)
 import Url exposing (Url)
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, handleJsonResponse)
+import Utils exposing (Common, RemoteData(..), getRequest, mapLoaded, remoteToMaybe, setToken)
 
 
 type alias Model =
-    { common : Maybe Common
+    { common : RemoteData Common
     , navKey : Key
     , route : Maybe Route
     , page : Page
     , burgerOpened : Bool
     , ignoredConfirmPrompt : Bool
+    , confirmAccountModal : Maybe ConfirmAccount.Model
     }
 
 
@@ -51,17 +53,21 @@ type Page
     | PageEditCarpools EditCarpools.Model
     | PageRepertoire Page.Repertoire.Model
     | PageMinutes Page.Minutes.Model
-      -- | PageForgotPassword Page.ForgotPassword.Model
+    | PageForgotPassword Page.ForgotPassword.Model
+    | PageResetPassword Page.ResetPassword.Model
     | PageAdmin Page.Admin.Model
 
 
 type Msg
-    = OnFetchCommon (Result Http.Error Common)
+    = OnFetchCommon (GreaseResult Common)
+    | Tick Posix
     | OnUrlChange Url
     | OnUrlRequest UrlRequest
     | ToggleBurger
     | IgnoreConfirmPrompt
-    | Tick Posix
+    | ConfirmAccount
+    | CancelConfirmAccount
+    | ConfirmAccountMsg ConfirmAccount.Msg
     | HomeMsg Page.Home.Msg
     | LoginMsg Page.Login.Msg
     | RosterMsg Page.Roster.Msg
@@ -71,7 +77,8 @@ type Msg
     | EditCarpoolsMsg EditCarpools.Msg
     | RepertoireMsg Page.Repertoire.Msg
     | MinutesMsg Page.Minutes.Msg
-      -- | ForgotPasswordMsg Page.ForgotPassword.Msg
+    | ForgotPasswordMsg Page.ForgotPassword.Msg
+    | ResetPasswordMsg Page.ResetPassword.Msg
     | AdminMsg Page.Admin.Msg
 
 
@@ -82,12 +89,13 @@ init apiTokenJson url navKey =
             Decode.decodeValue string apiTokenJson |> Result.withDefault ""
 
         model =
-            { common = Nothing
+            { common = Loading
             , navKey = navKey
             , route = Just Route.Login
             , page = PageNone
             , burgerOpened = False
             , ignoredConfirmPrompt = False
+            , confirmAccountModal = Nothing
             }
     in
     ( { model | route = Route.fromUrl url }, loadCommon token navKey )
@@ -96,39 +104,24 @@ init apiTokenJson url navKey =
 loadCommon : String -> Nav.Key -> Cmd Msg
 loadCommon token key =
     let
-        getTask url resolver =
-            Http.task
-                { method = "GET"
-                , url = apiUrl ++ url
-                , body = Http.emptyBody
-                , headers = [ Http.header "token" token ]
-                , resolver = resolver
-                , timeout = Nothing
-                }
+        auth =
+            { token = token }
 
         getUser =
-            getTask "/user" (Http.stringResolver <| handleJsonResponse <| nullable memberDecoder)
+            getRequest auth "/user" (nullable memberDecoder)
 
         getMembers =
             if token == "" then
                 Task.succeed []
 
             else
-                getTask "/members" (Http.stringResolver <| handleJsonResponse <| Decode.list memberDecoder)
+                getRequest auth "/members" (Decode.list memberDecoder)
 
         getInfo =
-            if token == "" then
-                Task.succeed emptyInfo
-
-            else
-                getTask "/static" (Http.stringResolver <| handleJsonResponse infoDecoder)
+            getRequest auth "/static" infoDecoder
 
         getCurrentSemester =
-            if token == "" then
-                Task.succeed emptySemester
-
-            else
-                getTask "/semesters/current" (Http.stringResolver <| handleJsonResponse semesterDecoder)
+            getRequest auth "/semesters/current" semesterDecoder
 
         getTimeAndTimeZone =
             Task.map2 (\time timeZone -> ( time, timeZone )) now here
@@ -155,95 +148,132 @@ loadCommon token key =
 
 loadCurrentPage : Model -> ( Model, Cmd Msg )
 loadCurrentPage model =
-    case model.common of
+    case model.common |> remoteToMaybe of
         Nothing ->
             ( model, Cmd.none )
 
         Just common ->
-            case common.user of
-                Nothing ->
-                    case model.page of
-                        PageLogin _ ->
+            if common.user |> isNothing then
+                let
+                    loadUnauthorizedPage pageInit page msg route =
+                        let
+                            ( pageModel, pageCmd ) =
+                                pageInit
+                        in
+                        ( { model | page = page pageModel }
+                        , Cmd.batch
+                            [ Cmd.map msg pageCmd
+                            , Route.replaceUrl common.key route
+                            ]
+                        )
+                in
+                case ( model.route, model.page ) of
+                    ( Just Route.EditProfile, PageEditProfile _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.Login, PageLogin _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.ForgotPassword, PageForgotPassword _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.ResetPassword _), PageResetPassword _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.EditProfile, _ ) ->
+                        loadUnauthorizedPage (Page.EditProfile.init common) PageEditProfile EditProfileMsg Route.EditProfile
+
+                    ( Just Route.ForgotPassword, _ ) ->
+                        loadUnauthorizedPage Page.ForgotPassword.init PageForgotPassword ForgotPasswordMsg Route.ForgotPassword
+
+                    ( Just (Route.ResetPassword token), _ ) ->
+                        loadUnauthorizedPage (Page.ResetPassword.init token) PageResetPassword ResetPasswordMsg (Route.ResetPassword token)
+
+                    _ ->
+                        loadUnauthorizedPage Page.Login.init PageLogin LoginMsg Route.Login
+
+            else
+                case ( model.route, model.page ) of
+                    ( Just Route.Login, _ ) ->
+                        ( model, Route.replaceUrl common.key Route.Home )
+
+                    ( Just Route.ForgotPassword, PageForgotPassword _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.ForgotPassword, _ ) ->
+                        Page.ForgotPassword.init |> updateWith PageForgotPassword ForgotPasswordMsg model
+
+                    ( Just (Route.ResetPassword _), PageResetPassword _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.ResetPassword token), _ ) ->
+                        Page.ResetPassword.init token |> updateWith PageResetPassword ResetPasswordMsg model
+
+                    ( Just Route.Home, PageHome _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.Home, _ ) ->
+                        Page.Home.init common |> updateWith PageHome HomeMsg model
+
+                    ( Just Route.Roster, PageRoster _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.Roster, _ ) ->
+                        Page.Roster.init common |> updateWith PageRoster RosterMsg model
+
+                    ( Just (Route.Profile _), PageProfile _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.Profile email), _ ) ->
+                        Page.Profile.init common email |> updateWith PageProfile ProfileMsg model
+
+                    ( Just Route.EditProfile, PageEditProfile _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just Route.EditProfile, _ ) ->
+                        Page.EditProfile.init common |> updateWith PageEditProfile EditProfileMsg model
+
+                    ( Just (Route.Events _), PageEvents _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.Events route), _ ) ->
+                        Page.Events.init common route |> updateWith PageEvents EventsMsg model
+
+                    ( Just (Route.EditCarpools _), PageEditCarpools _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.EditCarpools route), _ ) ->
+                        EditCarpools.init common route |> updateWith PageEditCarpools EditCarpoolsMsg model
+
+                    ( Just (Route.Repertoire _), PageRepertoire _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.Repertoire songId), _ ) ->
+                        Page.Repertoire.init common songId |> updateWith PageRepertoire RepertoireMsg model
+
+                    ( Just (Route.Minutes _), PageMinutes _ ) ->
+                        ( model, Cmd.none )
+
+                    ( Just (Route.Minutes route), _ ) ->
+                        Page.Minutes.init common route |> updateWith PageMinutes MinutesMsg model
+
+                    ( Just (Route.Admin tab), PageAdmin pageModel ) ->
+                        -- Only load the new tab if it isn't currently open
+                        if tab |> Maybe.map (\t -> Page.Admin.tabIsActive pageModel t) |> Maybe.withDefault False then
                             ( model, Cmd.none )
 
-                        PageEditProfile _ ->
-                            ( model, Cmd.none )
-
-                        _ ->
-                            let
-                                ( pageModel, pageCmd ) =
-                                    Page.Login.init
-                            in
-                            ( { model | page = PageLogin pageModel }, Cmd.batch [ Cmd.map LoginMsg pageCmd, Route.replaceUrl common.key Route.Login ] )
-
-                Just user ->
-                    case ( model.route, model.page ) of
-                        ( Just Route.Login, _ ) ->
-                            ( model, Route.replaceUrl common.key Route.Home )
-
-                        ( Just Route.ForgotPassword, _ ) ->
-                            ( model, Route.replaceUrl common.key Route.Home )
-
-                        ( Just Route.Home, PageHome pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just Route.Home, _ ) ->
-                            Page.Home.init common |> updateWith PageHome HomeMsg model
-
-                        ( Just Route.Roster, PageRoster pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just Route.Roster, _ ) ->
-                            Page.Roster.init common |> updateWith PageRoster RosterMsg model
-
-                        ( Just (Route.Profile email), PageProfile pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.Profile email), _ ) ->
-                            Page.Profile.init common email |> updateWith PageProfile ProfileMsg model
-
-                        ( Just Route.EditProfile, PageEditProfile pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just Route.EditProfile, _ ) ->
-                            Page.EditProfile.init common |> updateWith PageEditProfile EditProfileMsg model
-
-                        ( Just (Route.Events route), PageEvents pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.Events route), _ ) ->
-                            Page.Events.init common route |> updateWith PageEvents EventsMsg model
-
-                        ( Just (Route.EditCarpools route), PageEditCarpools pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.EditCarpools route), _ ) ->
-                            EditCarpools.init common route |> updateWith PageEditCarpools EditCarpoolsMsg model
-
-                        ( Just (Route.Repertoire songId), PageRepertoire pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.Repertoire songId), _ ) ->
-                            Page.Repertoire.init common songId |> updateWith PageRepertoire RepertoireMsg model
-
-                        ( Just (Route.Minutes route), PageMinutes pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.Minutes route), _ ) ->
-                            Page.Minutes.init common route |> updateWith PageMinutes MinutesMsg model
-
-                        ( Just (Route.Admin tab), PageAdmin pageModel ) ->
-                            ( model, Cmd.none )
-
-                        ( Just (Route.Admin tab), _ ) ->
+                        else
                             Page.Admin.init common tab |> updateWith PageAdmin AdminMsg model
 
-                        ( Nothing, _ ) ->
-                            ( { model | page = PageNone }, Cmd.none )
+                    ( Just (Route.Admin tab), _ ) ->
+                        Page.Admin.init common tab |> updateWith PageAdmin AdminMsg model
+
+                    ( Nothing, _ ) ->
+                        ( { model | page = PageNone }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Time.every (60 * 1000) Tick
 
 
@@ -260,49 +290,80 @@ urlRequest model request =
             )
 
         Browser.Internal url ->
-            let
-                route =
-                    Route.fromUrl url
+            if not (url |> Url.toString |> String.startsWith "#/") then
+                ( model, Nav.load (url |> Url.toString) )
 
-                urlChange =
-                    model.common
-                        |> Maybe.map .key
-                        |> Maybe.map
-                            (\key ->
-                                Nav.pushUrl key
-                                    (route
-                                        |> Maybe.map Route.routeToString
-                                        |> Maybe.withDefault ""
-                                    )
-                            )
-                        |> Maybe.withDefault Cmd.none
-            in
-            loadCurrentPage { model | route = route }
-                |> Tuple.mapSecond (\cmd -> Cmd.batch [ urlChange, cmd ])
+            else
+                let
+                    route =
+                        Route.fromUrl url
+
+                    urlChange =
+                        model.common
+                            |> remoteToMaybe
+                            |> Maybe.map .key
+                            |> Maybe.map
+                                (\key ->
+                                    Nav.pushUrl key
+                                        (route
+                                            |> Maybe.map Route.routeToString
+                                            |> Maybe.withDefault ""
+                                        )
+                                )
+                            |> Maybe.withDefault Cmd.none
+                in
+                loadCurrentPage { model | route = route }
+                    |> Tuple.mapSecond (\cmd -> Cmd.batch [ urlChange, cmd ])
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case ( msg, model.page ) of
-        ( OnFetchCommon (Err _), _ ) ->
-            ( model, alert "There was an error loading the page." )
-
         ( OnFetchCommon (Ok common), _ ) ->
-            loadCurrentPage { model | common = Just common }
+            loadCurrentPage { model | common = Loaded common }
+
+        ( OnFetchCommon (Err error), _ ) ->
+            case model.route of
+                Just Route.Login ->
+                    ( { model | common = Failure error }, Cmd.none )
+
+                Just Route.EditProfile ->
+                    ( { model | common = Failure error }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.batch [ setToken Nothing, Nav.reload ] )
 
         ( OnUrlRequest request, _ ) ->
             urlRequest model request
 
         ( OnUrlChange url, _ ) ->
-            loadCurrentPage { model | route = Route.fromUrl url }
+            loadCurrentPage { model | burgerOpened = False, route = Route.fromUrl url }
 
-        ( Tick time, _ ) ->
-            case model.common of
-                Just common ->
-                    ( { model | common = Just { common | now = time } }, Cmd.none )
+        ( ConfirmAccount, _ ) ->
+            case ( model.common, model.confirmAccountModal ) of
+                ( Loaded common, Nothing ) ->
+                    ( { model | confirmAccountModal = Just <| ConfirmAccount.init common }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
+
+        ( CancelConfirmAccount, _ ) ->
+            ( { model | confirmAccountModal = Nothing }, Cmd.none )
+
+        ( ConfirmAccountMsg modalMsg, _ ) ->
+            case model.confirmAccountModal of
+                Just modalModel ->
+                    let
+                        ( newModel, newMsg ) =
+                            ConfirmAccount.update modalModel modalMsg
+                    in
+                    ( { model | confirmAccountModal = Just newModel }, Cmd.map ConfirmAccountMsg newMsg )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ( Tick time, _ ) ->
+            ( { model | common = model.common |> mapLoaded (\c -> { c | now = time }) }, Cmd.none )
 
         ( ToggleBurger, _ ) ->
             ( { model | burgerOpened = not model.burgerOpened }, Cmd.none )
@@ -364,8 +425,18 @@ update msg model =
         ( MinutesMsg _, _ ) ->
             ( model, Cmd.none )
 
-        -- ( ForgotPasswordMsg pageMsg, PageForgotPassword pageModel ) ->
-        --     Page.ForgotPassword.update pageMsg pageModel |> updateWith PageForgotPassword ForgotPasswordMsg model
+        ( ForgotPasswordMsg pageMsg, PageForgotPassword pageModel ) ->
+            Page.ForgotPassword.update pageMsg pageModel |> updateWith PageForgotPassword ForgotPasswordMsg model
+
+        ( ForgotPasswordMsg _, _ ) ->
+            ( model, Cmd.none )
+
+        ( ResetPasswordMsg pageMsg, PageResetPassword pageModel ) ->
+            Page.ResetPassword.update pageMsg pageModel |> updateWith PageResetPassword ResetPasswordMsg model
+
+        ( ResetPasswordMsg _, _ ) ->
+            ( model, Cmd.none )
+
         ( AdminMsg pageMsg, PageAdmin pageModel ) ->
             Page.Admin.update pageMsg pageModel |> updateWith PageAdmin AdminMsg model
 
@@ -399,30 +470,74 @@ main =
 view : Model -> Browser.Document Msg
 view model =
     let
-        ( maybeUser, content ) =
-            case model.common of
+        maybeUser =
+            model.common
+                |> remoteToMaybe
+                |> Maybe.andThen .user
+
+        commonIsLoaded =
+            isJust (model.common |> remoteToMaybe)
+
+        showConfirmSemester =
+            not model.ignoredConfirmPrompt
+                && commonIsLoaded
+                && (maybeUser
+                        |> Maybe.map (\u -> isNothing u.grades)
+                        |> Maybe.withDefault False
+                   )
+
+        confirmSemesterBanner =
+            if showConfirmSemester then
+                confirmAccountHeader
+                    { ignoreConfirm = IgnoreConfirmPrompt
+                    , confirmAccount = ConfirmAccount
+                    }
+
+            else
+                text ""
+
+        confirmAccountModal =
+            case model.confirmAccountModal of
+                Just modal ->
+                    Basics.modal CancelConfirmAccount <|
+                        (ConfirmAccount.view modal
+                            |> Html.map ConfirmAccountMsg
+                        )
+
                 Nothing ->
-                    ( Nothing, div [ class "center" ] [ spinner ] )
+                    text ""
 
-                Just common ->
-                    ( common.user, currentPage model )
-
-        body =
-            div [ id "app" ]
-                [ navBar maybeUser model.burgerOpened
-                , confirmAccountHeader (not model.ignoredConfirmPrompt && isJust model.common && isNothing maybeUser)
-                , div [ style "padding-bottom" "50px" ] []
-                , content
-                ]
+        content =
+            model.common
+                |> Basics.remoteContent
+                    (\_ ->
+                        currentPage model.page
+                    )
     in
     { title = "GlubHub"
-    , body = [ body ]
+    , body =
+        [ div [ id "app" ]
+            [ navBar
+                { common = model.common |> remoteToMaybe
+                , burgerOpened = model.burgerOpened
+                , toggleBurger = ToggleBurger
+                }
+            , confirmSemesterBanner
+            , confirmAccountModal
+            , div [ style "padding-bottom" "50px" ] []
+            , div
+                [ class "center"
+                , style "height" "100%"
+                ]
+                [ content ]
+            ]
+        ]
     }
 
 
-currentPage : Model -> Html Msg
-currentPage model =
-    case model.page of
+currentPage : Page -> Html Msg
+currentPage page =
+    case page of
         PageNone ->
             text ""
 
@@ -453,105 +568,11 @@ currentPage model =
         PageMinutes pageModel ->
             Page.Minutes.view pageModel |> Html.map MinutesMsg
 
-        -- PageForgotPassword pageModel ->
-        --     Page.ForgotPassword.view pageModel |> Html.map ForgotPasswordMsg
+        PageForgotPassword pageModel ->
+            Page.ForgotPassword.view pageModel |> Html.map ForgotPasswordMsg
+
+        PageResetPassword pageModel ->
+            Page.ResetPassword.view pageModel |> Html.map ResetPasswordMsg
+
         PageAdmin pageModel ->
             Page.Admin.view pageModel |> Html.map AdminMsg
-
-
-navBar : Maybe Member -> Bool -> Html Msg
-navBar maybeUser burgerOpened =
-    nav [ class "navbar is-primary is-fixed-top", attribute "role" "navigation", attribute "aria-label" "main navigation" ]
-        [ navBarLogoAndBurger burgerOpened
-        , navBarLinks maybeUser
-        ]
-
-
-navBarLogoAndBurger : Bool -> Html Msg
-navBarLogoAndBurger burgerOpened =
-    div [ class "navbar-brand" ]
-        [ a [ Route.href Route.Home, class "navbar-item" ]
-            [ span [ class "icon is-small", style "width" "3vw" ]
-                [ i [ class "fas fa-home" ] [] ]
-            ]
-        , a
-            [ attribute "role" "button"
-            , class <|
-                "navbar-burger"
-                    ++ (if burgerOpened then
-                            " is-active"
-
-                        else
-                            ""
-                       )
-            , attribute "aria-label" "menu"
-            , attribute "aria-expanded" "false"
-            , onClick ToggleBurger
-            ]
-            [ span [ attribute "aria-hidden" "true" ] []
-            , span [ attribute "aria-hidden" "true" ] []
-            , span [ attribute "aria-hidden" "true" ] []
-            ]
-        ]
-
-
-navBarLinks : Maybe Member -> Html Msg
-navBarLinks maybeUser =
-    let
-        ( primaryLinks, profileLink ) =
-            case maybeUser of
-                Just user ->
-                    ( [ a [ class "navbar-item", Route.href <| Route.Events { id = Nothing, tab = Nothing } ] [ text "Events" ]
-                      , a [ class "navbar-item", Route.href <| Route.Repertoire Nothing ] [ text "Music" ]
-                      , a [ class "navbar-item", Route.href Route.Roster ] [ text "People" ]
-                      , a [ class "navbar-item", Route.href <| Route.Minutes { id = Nothing, tab = Nothing } ] [ text "Minutes" ]
-                      , a [ class "navbar-item", Route.href <| Route.Admin Nothing ] [ text "Admin" ]
-                      ]
-                    , [ a
-                            [ Route.href <| Route.Profile user.email
-                            , class "navbar-item"
-                            ]
-                            [ text user.fullName ]
-                      ]
-                    )
-
-                Nothing ->
-                    ( [], [] )
-    in
-    div [ class "navbar-menu" ]
-        [ div [ class "navbar-start" ] primaryLinks
-        , div [ class "navbar-end" ] profileLink
-        ]
-
-
-confirmAccountHeader : Bool -> Html Msg
-confirmAccountHeader showHeader =
-    if not showHeader then
-        section [ style "display" "none" ] []
-
-    else
-        section [ style "margin" "2em", style "margin-bottom" "-1em" ]
-            [ div [ class "notification is-info" ]
-                [ button [ class "delete", onClick IgnoreConfirmPrompt ] []
-                , div
-                    [ style "width" "100%"
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    ]
-                    [ div []
-                        [ text "Welcome! Feel free to browse the site, but "
-                        , text "if you're going to be active in Glee Club this "
-                        , text "semester, please confirm your account so we "
-                        , text "can get you into the system."
-                        ]
-                    , div []
-                        [ a
-                            [ Route.href Route.Home
-                            , style "margin" "0 2em"
-                            , class "button is-info is-inverted is-outlined"
-                            ]
-                            [ text "Confirm" ]
-                        ]
-                    ]
-                ]
-            ]

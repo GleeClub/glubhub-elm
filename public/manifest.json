@@ -3,9 +3,9 @@
   "name": "Create Elm App Sample",
   "icons": [
     {
-      "src": "favicon.ico",
+      "src": "GlubHub icon.svg",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/svg"
     }
   ],
   "start_url": "./index.html",

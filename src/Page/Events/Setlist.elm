@@ -4,10 +4,9 @@ import Components.Basics as Basics
 import Error exposing (GreaseResult)
 import Html exposing (Html, div, table, tbody, td, text, tr)
 import Html.Attributes exposing (class, id)
-import Http
 import Json.Decode as Decode
 import Models.Song exposing (Song, pitchToString, songDecoder)
-import Route exposing (Route)
+import Route
 import Task
 import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
 
@@ -17,13 +16,12 @@ import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
 
 
 type alias Model =
-    { songs : RemoteData (List Song)
-    }
+    RemoteData (List Song)
 
 
 init : Common -> Int -> ( Model, Cmd Msg )
 init common eventId =
-    ( { songs = Loading }, loadSetlist common eventId )
+    ( Loading, loadSetlist common eventId )
 
 
 
@@ -35,10 +33,10 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update msg _ =
     case msg of
         OnLoadSetlist songsResult ->
-            ( { model | songs = resultToRemote songsResult }, Cmd.none )
+            ( resultToRemote songsResult, Cmd.none )
 
 
 
@@ -62,7 +60,7 @@ loadSetlist common eventId =
 view : Model -> Html Msg
 view model =
     div [ id "setlist" ]
-        [ model.songs |> Basics.remoteContent viewSongTable ]
+        [ model |> Basics.remoteContent viewSongTable ]
 
 
 viewSongTable : List Song -> Html Msg

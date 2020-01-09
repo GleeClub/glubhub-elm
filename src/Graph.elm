@@ -1,21 +1,22 @@
-module Graph exposing (graphGrades)
+module Graph exposing (HoveredEvent, graphGrades)
 
 -- import Color
 
 import Axis
 import Color exposing (Color)
-import Html exposing (text)
+import Html.Events exposing (on)
+import Json.Decode as Decode
 import Models.Event exposing (FullEvent)
 import Models.Info exposing (Semester)
 import Path exposing (Path)
 import Scale exposing (ContinuousScale)
 import Shape
-import Time exposing (Posix, millisToPosix, posixToMillis)
+import Time exposing (Posix)
 import TypedSvg exposing (circle, g, svg)
-import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, title, transform, viewBox)
+import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, transform, viewBox)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
-import TypedSvg.Events exposing (onClick, onMouseEnter, onMouseLeave)
+import TypedSvg.Events exposing (onMouseLeave)
 import TypedSvg.Types exposing (Fill(..), Length(..), Transform(..))
 import Utils exposing (goldColor)
 
@@ -35,6 +36,11 @@ padding =
     30
 
 
+gray : Color
+gray =
+    Color.rgb 0.7 0.7 0.7
+
+
 xScale : Semester -> ContinuousScale Time.Posix
 xScale semester =
     Scale.time Time.utc ( 0, w - 2 * padding ) ( semester.startDate, semester.endDate )
@@ -45,9 +51,9 @@ yScale =
     Scale.linear ( h - 2 * padding, 0 ) ( 0, 100 )
 
 
-xAxis : Semester -> List ( Posix, Float ) -> Svg msg
-xAxis semester events =
-    Axis.bottom [ Axis.tickCount (List.length events // 2) ] (xScale semester)
+xAxis : Semester -> Svg msg
+xAxis semester =
+    Axis.bottom [ Axis.tickCount 20 ] (xScale semester)
 
 
 yAxis : Svg msg
@@ -75,7 +81,7 @@ transformToAreaData semester ( callTime, partialScore ) =
     Just ( ( callTimeCoord, scoreLowerBound ), ( callTimeCoord, score ) )
 
 
-eventPoint : Semester -> (Maybe FullEvent -> msg) -> FullEvent -> Svg msg
+eventPoint : Semester -> (Maybe HoveredEvent -> msg) -> FullEvent -> Svg msg
 eventPoint semester hoverMsg event =
     let
         xPos =
@@ -85,10 +91,12 @@ eventPoint semester hoverMsg event =
             Scale.convert yScale (eventPartialScore event)
     in
     circle
-        [ r <| Px 3
-        , fill (Fill goldColor)
-        , onClick (hoverMsg <| Just event)
-        , onMouseEnter (hoverMsg <| Just event)
+        [ r <| Px 2.5
+        , stroke Color.black
+        , strokeWidth 0.5
+        , fill <| Fill goldColor
+        , on "mousedown" (hoveredEventDecoder event |> Decode.map hoverMsg)
+        , on "mouseenter" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , onMouseLeave (hoverMsg Nothing)
         , cx <| Px xPos
         , cy <| Px yPos
@@ -112,21 +120,18 @@ area semester pastEvents =
 
 eventPartialScore : FullEvent -> Float
 eventPartialScore event =
-    event.attendance |> Maybe.map .partialScore |> Maybe.withDefault 0
+    event.attendance |> Maybe.andThen .partialScore |> Maybe.withDefault 0
 
 
-graphGrades : Semester -> List FullEvent -> (Maybe FullEvent -> msg) -> Svg msg
+graphGrades : Semester -> List FullEvent -> (Maybe HoveredEvent -> msg) -> Svg msg
 graphGrades semester events hoverMsg =
     let
         callTimesAndScores =
             events |> List.map (\event -> ( event.callTime, eventPartialScore event ))
 
-        oneMonthInMillis =
-            1000 * 60 * 60 * 24 * 30
-
         pastEvents =
             case ( callTimesAndScores |> List.head, callTimesAndScores |> List.reverse |> List.head ) of
-                ( Just ( firstCallTime, firstScore ), Just ( lastCallTime, lastScore ) ) ->
+                ( Just ( _, firstScore ), Just ( _, lastScore ) ) ->
                     ( semester.startDate, firstScore )
                         :: callTimesAndScores
                         ++ [ ( semester.endDate, lastScore ) ]
@@ -136,12 +141,12 @@ graphGrades semester events hoverMsg =
     in
     svg [ viewBox 0 0 w h ]
         [ g [ transform [ Translate (padding - 1) (h - padding) ] ]
-            [ xAxis semester pastEvents ]
+            [ xAxis semester ]
         , g [ transform [ Translate (padding - 1) padding ] ]
             [ yAxis ]
         , g [ transform [ Translate padding padding ], class [ "series" ] ] <|
             Path.element (area semester pastEvents)
-                [ strokeWidth 2, fill <| Fill <| Color.rgba 0.4 0.4 0.4 0.54 ]
+                [ strokeWidth 2, fill <| Fill gray ]
                 :: Path.element (line semester pastEvents)
                     [ stroke goldColor, strokeWidth 2, fill FillNone ]
                 :: (events |> List.map (eventPoint semester hoverMsg))
@@ -159,3 +164,18 @@ graphGrades semester events hoverMsg =
 --   fill: #b4a46a;
 -- }
 -- </style>
+
+
+type alias HoveredEvent =
+    { x : Int
+    , y : Int
+    , event : FullEvent
+    }
+
+
+hoveredEventDecoder : FullEvent -> Decode.Decoder (Maybe HoveredEvent)
+hoveredEventDecoder event =
+    Decode.map3 (\x y e -> Just { x = x, y = y, event = e })
+        (Decode.at [ "clientX" ] Decode.int)
+        (Decode.at [ "clientY" ] Decode.int)
+        (Decode.succeed event)

@@ -1,6 +1,6 @@
 module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, EventAttendee, EventCarpool, EventWithAttendance, FullEvent, FullEventAttendance, FullEventGig, Gig, GradeChange, Grades, HasAttendance, HasCallAndReleaseTimes, IsEvent, Member, MemberPermission, MemberRole, SimpleAttendance, UpdatedCarpool, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder, eventWithAttendanceDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder, gradeChangeDecoder, gradesDecoder, memberDecoder, memberPermissionDecoder, memberRoleDecoder, simpleAttendanceDecoder)
 
-import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string)
+import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
 import Models.Info exposing (Enrollment, Role, Uniform, enrollmentDecoder, posixDecoder, roleDecoder, uniformDecoder)
 import Time exposing (Posix)
@@ -202,9 +202,9 @@ type alias FullEventAttendance =
     , didAttend : Bool
     , confirmed : Bool
     , minutesLate : Int
-    , gradeChange : Float
-    , gradeChangeReason : String
-    , partialScore : Float
+    , gradeChange : Maybe Float
+    , gradeChangeReason : Maybe String
+    , partialScore : Maybe Float
     }
 
 
@@ -215,9 +215,9 @@ fullEventAttendanceDecoder =
         |> required "didAttend" bool
         |> required "confirmed" bool
         |> required "minutesLate" int
-        |> required "gradeChange" float
-        |> required "gradeChangeReason" string
-        |> required "partialScore" float
+        |> optional "gradeChange" (nullable float) Nothing
+        |> optional "gradeChangeReason" (nullable string) Nothing
+        |> optional "partialScore" (nullable float) Nothing
 
 
 type alias AbsenceRequest =
@@ -260,7 +260,7 @@ absenceRequestStateDecoder =
                     "pending" ->
                         Decode.succeed Pending
 
-                    other ->
+                    _ ->
                         Decode.fail "AbsenceRequestState can only be \"approved\", \"denied\", or \"pending\""
             )
 
@@ -425,7 +425,6 @@ type alias Member =
     , firstName : String
     , preferredName : Maybe String
     , lastName : String
-    , fullName : String
     , phoneNumber : String
     , picture : Maybe String
     , passengers : Int
@@ -454,7 +453,6 @@ memberDecoder =
         |> required "firstName" string
         |> optional "preferredName" (nullable string) Nothing
         |> required "lastName" string
-        |> required "fullName" string
         |> required "phoneNumber" string
         |> optional "picture" (nullable string) Nothing
         |> required "passengers" int

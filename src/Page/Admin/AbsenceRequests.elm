@@ -1,20 +1,20 @@
 module Page.Admin.AbsenceRequests exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Datetime exposing (dateFormatter, timeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, h2, i, img, input, label, li, p, section, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (attribute, class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode exposing (field, string)
+import Html exposing (Html, a, br, button, div, i, p, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, colspan, disabled, href, style)
+import Html.Events exposing (onClick)
+import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra exposing (getAt, groupWhile, updateAt)
+import List.Extra
 import Models.Admin exposing (AbsenceRequest, AbsenceRequestState(..), absenceRequestDecoder)
-import Models.Event exposing (Event, Member, eventDecoder)
-import Route exposing (Route)
+import Models.Event exposing (Event, eventDecoder)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullDateTimeFormatter, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Time exposing (posixToMillis)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, fullName, getRequest, mapLoaded, postRequest, resultToRemote)
 
 
 
@@ -55,31 +55,33 @@ update msg model =
             ( { model | requestsAndEvents = resultToRemote result }, Cmd.none )
 
         OnRespondToAbsenceRequest result ->
-            ( { model | state = resultToSubmissionState result }, Cmd.none )
+            checkSubmissionResult model result
 
         RespondToAbsenceRequest request approved ->
             case model.requestsAndEvents of
                 Loaded requestsAndEvents ->
                     let
-                        updateRequestAndEvents ( r, event ) =
-                            if r.member == request.member && r.event == request.event then
-                                ( { r
-                                    | state =
+                        updateRequestsAndEvents r =
+                            { r
+                                | state =
+                                    if r.member == request.member && r.event == request.event then
                                         if approved then
-                                            Approved
+                                            AbsenceRequestApproved
 
                                         else
-                                            Denied
-                                  }
-                                , event
-                                )
+                                            AbsenceRequestDenied
 
-                            else
-                                ( r, event )
+                                    else
+                                        r.state
+                            }
                     in
                     ( { model
                         | state = Sending
-                        , requestsAndEvents = Loaded (requestsAndEvents |> List.map updateRequestAndEvents)
+                        , requestsAndEvents =
+                            Loaded
+                                (requestsAndEvents
+                                    |> List.map (Tuple.mapFirst updateRequestsAndEvents)
+                                )
                       }
                     , request |> respondToAbsenceRequest model.common approved
                     )
@@ -128,12 +130,29 @@ respondToAbsenceRequest common approved absenceRequest =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ Basics.title "Absence Requests"
-        , h2 [ class "subtitle", style "text-align" "center" ]
-            [ text "for the semester" ]
+    let
+        requestsAndEvents =
+            model.requestsAndEvents
+                |> mapLoaded (List.sortBy (Tuple.first >> .time >> posixToMillis))
+
+        openRequestFilter ( absenceRequest, _ ) =
+            absenceRequest.state == AbsenceRequestPending
+
+        closedRequestFilter ( absenceRequest, _ ) =
+            absenceRequest.state /= AbsenceRequestPending
+    in
+    div [ style "width" "100%" ]
+        [ Basics.title "Open Absence Requests"
         , Basics.box
-            [ model.requestsAndEvents |> Basics.remoteContent (absenceRequestTable model.common)
+            [ requestsAndEvents
+                |> mapLoaded (List.filter openRequestFilter)
+                |> Basics.remoteContent (absenceRequestTable model.common)
+            ]
+        , Basics.title "Closed Absence Requests"
+        , Basics.box
+            [ requestsAndEvents
+                |> mapLoaded (List.filter closedRequestFilter)
+                |> Basics.remoteContent (absenceRequestTable model.common)
             , model.state |> Basics.submissionStateBox
             ]
         ]
@@ -141,58 +160,31 @@ view model =
 
 absenceRequestTable : Common -> List ( AbsenceRequest, Event ) -> Html Msg
 absenceRequestTable common requestsAndEvents =
-    let
-        ( openRequests, closedRequests ) =
-            requestsAndEvents |> List.partition (\( r, e ) -> r.state == Pending)
-
-        openRequestRows =
-            openRequests |> List.map (singleAbsenceRequest common)
-
-        closedRequestRows =
-            if List.isEmpty closedRequests then
-                []
-
-            else
-                tr [ class "no-bottom-border" ] [ td [ colspan 6 ] [ Basics.divider "closed" ] ]
-                    :: (closedRequests |> List.map (singleAbsenceRequest common))
-    in
-    table [ class "table" ]
+    table [ class "table", style "width" "100%" ]
         [ absenceRequestHeader
         , tbody []
-            (openRequestRows ++ closedRequestRows)
+            (requestsAndEvents |> List.concatMap (singleAbsenceRequest common))
         ]
 
 
 absenceRequestHeader : Html Msg
 absenceRequestHeader =
+    let
+        headers =
+            [ "When Submitted", "Event Name", "Event Date", "Loser", "Excuse" ]
+    in
     thead []
-        [ tr []
-            [ th [] [ b [] [ text "Who?" ] ]
-            , th [] [ b [] [ text "What?" ] ]
-            , th [] [ b [] [ text "When?" ] ]
-            , th [] [ b [] [ text "Where?" ] ]
-            , th [] [ b [] [ text "Why?" ] ]
-            , th [] [ b [] [ text "How (", i [] [ text "do you decide" ], text ")?" ] ]
-            ]
-        ]
+        [ tr [ style "width" "100%" ] (headers |> List.map (\h -> th [] [ text h ])) ]
 
 
-singleAbsenceRequest : Common -> ( AbsenceRequest, Event ) -> Html Msg
+singleAbsenceRequest : Common -> ( AbsenceRequest, Event ) -> List (Html Msg)
 singleAbsenceRequest common ( absenceRequest, event ) =
-    tr
-        ([ class "no-bottom-border" ]
-            ++ (if absenceRequest.state /= Pending then
-                    [ style "background-color" "#eee" ]
-
-                else
-                    []
-               )
-        )
+    [ tr
+        [ class "no-bottom-border" ]
         [ td []
-            [ common.members
-                |> List.Extra.find (\m -> m.email == absenceRequest.member)
-                |> Maybe.map (\m -> a [ Route.href <| Route.Profile m.email ] [ text m.fullName ])
-                |> Maybe.withDefault (i [] [ text "someone" ])
+            [ text (absenceRequest.time |> dateFormatter common.timeZone)
+            , br [] []
+            , text (absenceRequest.time |> timeFormatter common.timeZone)
             ]
         , td []
             [ a
@@ -202,52 +194,66 @@ singleAbsenceRequest common ( absenceRequest, event ) =
                 [ text event.name ]
             ]
         , td []
-            [ text (event.callTime |> fullDateTimeFormatter common.timeZone) ]
+            [ text (event.callTime |> dateFormatter common.timeZone)
+            , br [] []
+            , text (event.callTime |> timeFormatter common.timeZone)
+            , br [] []
+            , text (event.location |> Maybe.withDefault "")
+            ]
         , td []
-            [ event.location
-                |> Maybe.map text
-                |> Maybe.withDefault (i [] [ text "somewhere" ])
+            [ common.members
+                |> List.Extra.find (\m -> m.email == absenceRequest.member)
+                |> Maybe.map (\m -> a [ Route.href <| Route.Profile m.email ] [ text (m |> fullName) ])
+                |> Maybe.withDefault (i [] [ text absenceRequest.member ])
             ]
         , td [] [ i [] [ text <| "\"" ++ absenceRequest.reason ++ "\"" ] ]
-        , td [] [ absenceRequestButtons absenceRequest ]
         ]
+    , tr [ class "no-bottom-border" ]
+        [ td [ colspan 5 ]
+            [ absenceRequestButtons absenceRequest ]
+        ]
+    ]
 
 
 absenceRequestButtons : AbsenceRequest -> Html Msg
 absenceRequestButtons absenceRequest =
-    case absenceRequest.state of
-        Pending ->
-            div [ class "field is-grouped" ]
-                [ p [ class "control" ]
-                    [ button [ class "button is-success", onClick <| RespondToAbsenceRequest absenceRequest True ]
-                        [ text "I pity the fool" ]
-                    ]
-                , p [ class "control" ]
-                    [ button [ class "button is-danger", onClick <| RespondToAbsenceRequest absenceRequest False ]
-                        [ text "Talk to the hand" ]
-                    ]
-                ]
+    let
+        ( leftButton, rightButton ) =
+            case absenceRequest.state of
+                AbsenceRequestPending ->
+                    ( ( [], "Get fukt nerd", Just False )
+                    , ( [ class "oldgold" ], "Bestow mercy", Just True )
+                    )
 
-        Approved ->
-            div [ class "field" ]
-                [ p [ style "padding-bottom" "5px" ]
-                    [ i [ class "fas fa-thumbs-up" ] []
-                    , text " I pitied the fool"
-                    ]
-                , p [ class "control" ]
-                    [ button [ class "button", onClick <| RespondToAbsenceRequest absenceRequest False ]
-                        [ text "Actually, I hate them" ]
-                    ]
-                ]
+                AbsenceRequestApproved ->
+                    ( ( [], "Jk get fukt nerd", Just False )
+                    , ( [], "Mercy bestowed", Nothing )
+                    )
 
-        Denied ->
-            div [ class "field" ]
-                [ p [ style "padding-bottom" "5px" ]
-                    [ i [ class "fas fa-thumbs-down" ] []
-                    , text " They talked to my hand"
-                    ]
-                , p [ class "control" ]
-                    [ button [ class "button", onClick <| RespondToAbsenceRequest absenceRequest True ]
-                        [ text "Spare the hand-talker" ]
-                    ]
-                ]
+                AbsenceRequestDenied ->
+                    ( ( [], "Nerd got fukt", Nothing )
+                    , ( [ style "white-space" "normal"
+                        , style "max-width" "150px"
+                        , style "height" "initial"
+                        ]
+                      , "I have heard your pleas and acquiesced to your request"
+                      , Just True
+                      )
+                    )
+    in
+    div [ class "field is-grouped is-grouped-right" ]
+        [ p [ class "control" ] [ absenceRequestButton absenceRequest leftButton ]
+        , p [ class "control" ] [ absenceRequestButton absenceRequest rightButton ]
+        ]
+
+
+absenceRequestButton : AbsenceRequest -> ( List (Html.Attribute Msg), String, Maybe Bool ) -> Html Msg
+absenceRequestButton absenceRequest ( attributes, content, maybeClickMsg ) =
+    button
+        ((class "button" :: attributes)
+            ++ (maybeClickMsg
+                    |> Maybe.map (\approved -> [ onClick <| RespondToAbsenceRequest absenceRequest approved ])
+                    |> Maybe.withDefault [ disabled True, style "font-style" "italic" ]
+               )
+        )
+        [ text content ]
