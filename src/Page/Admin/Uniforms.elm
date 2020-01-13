@@ -1,20 +1,16 @@
 module Page.Admin.Uniforms exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, footer, form, h1, header, i, img, input, label, p, section, span, table, tbody, td, text, textarea, th, thead, tr)
-import Html.Attributes exposing (attribute, class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
-import Http
+import Html exposing (Html, b, button, div, footer, header, i, input, p, section, span, table, td, text, textarea, th, tr)
+import Html.Attributes exposing (attribute, class, placeholder, style, type_, value)
+import Html.Events exposing (onBlur, onClick, onInput)
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
-import List.Extra exposing (getAt, groupWhile, setAt, updateAt)
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
+import List.Extra exposing (getAt, setAt, updateAt)
 import Models.Info exposing (Uniform, uniformDecoder)
-import Route exposing (Route)
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, deleteRequest, getRequest, mapLoaded, postRequest, postRequestFull, remoteToMaybe, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, getRequest, mapLoaded, postRequest, postRequestFull, remoteToMaybe, resultToRemote, resultToSubmissionState)
 
 
 
@@ -49,11 +45,6 @@ emptyUniform =
     , description = Just ""
     , color = Nothing
     }
-
-
-editLinksPermission : String
-editLinksPermission =
-    "edit-links"
 
 
 
@@ -207,7 +198,7 @@ serializeUniform uniform =
 
 view : Model -> Html Msg
 view model =
-    div []
+    div [ style "width" "100%" ]
         [ Basics.title "Uniforms"
         , Basics.box
             [ model.uniforms |> Basics.remoteContent (uniformTable model.newUniform)

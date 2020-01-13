@@ -1,26 +1,61 @@
-port module Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, apiUrl, dateFormatter, deleteRequest, eventIsOver, formatPhone, fullDateTimeFormatter, getRequest, goldColor, handleJsonResponse, mapLoaded, permittedTo, playPitch, postRequest, postRequestFull, rawHtml, remoteToMaybe, resultToRemote, resultToSubmissionState, romanNumeral, scrollToElement, setToken, simpleDateFormatter, simpleDateTimeFormatter, timeFormatter, timeFromNow)
+port module Utils exposing
+    ( Common
+    , RemoteData(..)
+    , SubmissionState(..)
+    , alert
+    , apiUrl
+    , checkSubmissionResult
+    , decodeId
+    , deleteRequest
+    , deployEditor
+    , eventIsOver
+    , formatPhone
+    , fullName
+    , getRequest
+    , goldColor
+    , handleJsonResponse
+    , isActiveClass
+    , isLoadingClass
+    , isPrimaryClass
+    , mapLoaded
+    , optionalSingleton
+    , permittedTo
+    , playPitch
+    , postRequest
+    , postRequestFull
+    , rawHtml
+    , remoteToMaybe
+    , resultToRemote
+    , resultToSubmissionState
+    , romanNumeral
+    , scrollToElement
+    , setToken
+    , showIfPermittedTo
+    , submissionStateBoxId
+    , timeout
+    )
 
 import Browser.Navigation as Nav
 import Color exposing (Color)
-import DateFormat
 import Error exposing (GreaseError, parseResponse)
-import Html exposing (Html, div, i, text)
-import Html.Attributes exposing (class)
+import Html exposing (Html)
 import Html.Parser
 import Html.Parser.Util
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Models.Event exposing (HasCallAndReleaseTimes, IsEvent, Member)
+import Maybe.Extra
+import Models.Event exposing (HasCallAndReleaseTimes, Member)
 import Models.Info exposing (Info, Semester)
 import Task exposing (Task)
-import Time exposing (Posix, Zone, millisToPosix, now, posixToMillis, toMonth)
+import Time exposing (Posix, Zone, posixToMillis)
 
 
 
 ---- CONSTANTS ----
 
 
+apiUrl : String
 apiUrl =
     "https://gleeclub.gatech.edu/cgi-bin/api"
 
@@ -33,6 +68,11 @@ goldColor =
 timeout : Maybe Float
 timeout =
     Just (1000 * 20)
+
+
+submissionStateBoxId : String
+submissionStateBoxId =
+    "submission-state-box"
 
 
 
@@ -82,6 +122,15 @@ type SubmissionState
 ---- FUNCTIONS ----
 
 
+optionalSingleton : Bool -> Html msg -> List (Html msg)
+optionalSingleton shouldRender content =
+    if shouldRender then
+        [ content ]
+
+    else
+        []
+
+
 mapLoaded : (a -> b) -> RemoteData a -> RemoteData b
 mapLoaded mapper remoteData =
     case remoteData of
@@ -104,7 +153,7 @@ remoteToMaybe remoteData =
         Loaded data ->
             Just data
 
-        other ->
+        _ ->
             Nothing
 
 
@@ -128,7 +177,22 @@ resultToSubmissionState result =
             ErrorSending error
 
 
-getRequest : Common -> String -> Decoder a -> Task GreaseError a
+checkSubmissionResult :
+    { a | state : SubmissionState }
+    -> Result GreaseError ()
+    -> ( { a | state : SubmissionState }, Cmd msg )
+checkSubmissionResult model result =
+    case result of
+        Ok _ ->
+            ( { model | state = NotSentYet }, Cmd.none )
+
+        Err error ->
+            ( { model | state = ErrorSending error }
+            , scrollToElement submissionStateBoxId
+            )
+
+
+getRequest : { a | token : String } -> String -> Decoder b -> Task GreaseError b
 getRequest common url decoder =
     Http.task
         { method = "GET"
@@ -140,7 +204,7 @@ getRequest common url decoder =
         }
 
 
-postRequestFull : Common -> String -> Encode.Value -> Decoder a -> Task GreaseError a
+postRequestFull : { a | token : String } -> String -> Encode.Value -> Decoder b -> Task GreaseError b
 postRequestFull common url body decoder =
     Http.task
         { method = "POST"
@@ -152,12 +216,12 @@ postRequestFull common url body decoder =
         }
 
 
-postRequest : Common -> String -> Encode.Value -> Task GreaseError ()
+postRequest : { a | token : String } -> String -> Encode.Value -> Task GreaseError ()
 postRequest common url body =
     postRequestFull common url body (Decode.succeed ())
 
 
-deleteRequest : Common -> String -> Task GreaseError ()
+deleteRequest : { a | token : String } -> String -> Task GreaseError ()
 deleteRequest common url =
     Http.task
         { method = "DELETE"
@@ -167,6 +231,11 @@ deleteRequest common url =
         , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
         , timeout = timeout
         }
+
+
+decodeId : Decoder Int
+decodeId =
+    Decode.field "id" Decode.int
 
 
 handleJsonResponse : Decoder a -> Http.Response String -> Result Http.Error a
@@ -193,111 +262,9 @@ handleJsonResponse decoder response =
                     Ok result
 
 
-fullDateTimeFormatter : Zone -> Posix -> String
-fullDateTimeFormatter zone dateTime =
-    let
-        formattingOptions =
-            [ DateFormat.dayOfWeekNameFull
-            , DateFormat.text ", "
-            , DateFormat.monthNameFull
-            , DateFormat.text " "
-            , DateFormat.dayOfMonthNumber
-            , DateFormat.text ", "
-            , DateFormat.yearNumber
-            , DateFormat.text " "
-            , DateFormat.hourNumber
-            , DateFormat.text ":"
-            , DateFormat.minuteFixed
-            , DateFormat.text " "
-            , DateFormat.amPmUppercase
-            ]
-    in
-    DateFormat.format formattingOptions zone dateTime
-
-
-simpleDateTimeFormatter : Zone -> Posix -> String
-simpleDateTimeFormatter zone dateTime =
-    let
-        formattingOptions =
-            [ DateFormat.monthNameAbbreviated
-            , DateFormat.text " "
-            , DateFormat.dayOfMonthNumber
-            , DateFormat.text " "
-            , DateFormat.hourNumber
-            , DateFormat.text ":"
-            , DateFormat.minuteFixed
-            , DateFormat.text " "
-            , DateFormat.amPmUppercase
-            ]
-    in
-    DateFormat.format formattingOptions zone dateTime
-
-
-timeFormatter : Zone -> Posix -> String
-timeFormatter zone dateTime =
-    let
-        formattingOptions =
-            [ DateFormat.hourNumber
-            , DateFormat.text ":"
-            , DateFormat.minuteFixed
-            , DateFormat.text " "
-            , DateFormat.amPmUppercase
-            ]
-    in
-    DateFormat.format formattingOptions zone dateTime
-
-
-dateFormatter : Zone -> Posix -> String
-dateFormatter zone dateTime =
-    let
-        formattingOptions =
-            [ DateFormat.dayOfWeekNameFull
-            , DateFormat.text ", "
-            , DateFormat.monthNameFull
-            , DateFormat.text " "
-            , DateFormat.dayOfMonthNumber
-            ]
-    in
-    DateFormat.format formattingOptions zone dateTime
-
-
-simpleDateFormatter : Zone -> Posix -> String
-simpleDateFormatter zone dateTime =
-    let
-        formattingOptions =
-            [ DateFormat.monthNumber
-            , DateFormat.text "/"
-            , DateFormat.dayOfMonthNumber
-            ]
-    in
-    DateFormat.format formattingOptions zone dateTime
-
-
-timeFromNow : Common -> Posix -> String
-timeFromNow common then_ =
-    let
-        nowMillis =
-            posixToMillis common.now
-
-        thenMillis =
-            posixToMillis then_
-
-        diffMinutes =
-            (thenMillis - nowMillis) * 1000 // 60
-    in
-    if diffMinutes < 60 then
-        "in " ++ String.fromInt diffMinutes ++ " minutes"
-
-    else if diffMinutes < 60 * 24 then
-        "in " ++ String.fromInt (diffMinutes // 60) ++ " hours"
-
-    else
-        "in " ++ String.fromInt (diffMinutes // (60 * 24)) ++ " days"
-
-
 eventIsOver : Posix -> HasCallAndReleaseTimes a -> Bool
 eventIsOver now { callTime, releaseTime } =
-    posixToMillis now < posixToMillis (releaseTime |> Maybe.withDefault callTime)
+    posixToMillis now > posixToMillis (releaseTime |> Maybe.withDefault callTime)
 
 
 formatPhone : String -> String
@@ -349,6 +316,49 @@ permittedTo permission user =
     user.permissions |> List.any (\p -> p.name == permission)
 
 
+showIfPermittedTo : String -> Member -> Html msg -> List (Html msg)
+showIfPermittedTo permission user content =
+    optionalSingleton (permittedTo permission user) content
+
+
+fullName : Member -> String
+fullName member =
+    let
+        firstName =
+            member.preferredName
+                |> Maybe.Extra.filter (\n -> String.length n > 0)
+                |> Maybe.withDefault member.firstName
+    in
+    firstName ++ " " ++ member.lastName
+
+
+isLoadingClass : Bool -> String
+isLoadingClass isLoading =
+    if isLoading then
+        " is-loading"
+
+    else
+        ""
+
+
+isActiveClass : Bool -> String
+isActiveClass isActive =
+    if isActive then
+        " is-active"
+
+    else
+        ""
+
+
+isPrimaryClass : Bool -> String
+isPrimaryClass isPrimary =
+    if isPrimary then
+        " is-primary"
+
+    else
+        ""
+
+
 
 -- PORTS --
 
@@ -363,3 +373,6 @@ port scrollToElement : String -> Cmd msg
 
 
 port playPitch : Int -> Cmd msg
+
+
+port deployEditor : { elementId : String, content : String } -> Cmd msg

@@ -1,18 +1,13 @@
 module Page.Admin.Dues exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, li, section, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (attribute, class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode exposing (field, string)
+import Html exposing (Html, div, input, label, span, table, td, text, tr)
+import Html.Attributes exposing (attribute, class, style, type_, value)
+import Html.Events exposing (onBlur, onInput)
+import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra exposing (groupWhile)
 import Models.Admin exposing (Fee, feeDecoder)
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
-import Route exposing (Route)
 import Task
 import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
 

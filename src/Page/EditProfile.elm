@@ -1,21 +1,19 @@
-module Page.EditProfile exposing (Model, Msg(..), ProfileForm, actionButtons, defaultForm, enrollmentOptions, formForUser, headerText, horizontalField, init, update, view, viewForm)
+module Page.EditProfile exposing (Model, Msg(..), init, update, view)
 
-import Browser.Navigation as Nav
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, button, div, form, h1, h3, h4, img, input, label, option, p, section, select, span, text)
-import Html.Attributes exposing (checked, class, disabled, for, href, id, name, placeholder, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode
-import Json.Encode as Encode exposing (bool, int, object, string)
+import Html exposing (Html, a, button, div, form, h4, input, label, option, p, section, select, span, text)
+import Html.Attributes exposing (checked, class, disabled, for, name, placeholder, selected, style, type_, value)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
+import Json.Encode as Encode exposing (bool, int, null, object, string)
 import MD5
 import Maybe.Extra exposing (isJust, isNothing)
-import Models.Event exposing (Member, memberDecoder)
+import Models.Event exposing (Member)
 import Models.Info exposing (Enrollment(..), enrollmentToString)
-import Route exposing (Route)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), alert, apiUrl, postRequest, setToken)
+import Time exposing (toYear)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, postRequest)
 
 
 
@@ -25,6 +23,7 @@ import Utils exposing (Common, RemoteData(..), alert, apiUrl, postRequest, setTo
 type alias Model =
     { common : Common
     , profileForm : ProfileForm
+    , state : SubmissionState
     }
 
 
@@ -56,14 +55,16 @@ init : Common -> ( Model, Cmd Msg )
 init common =
     let
         profileForm =
-            case common.user of
-                Just user ->
-                    formForUser user
-
-                Nothing ->
-                    defaultForm
+            common.user
+                |> Maybe.map formForUser
+                |> Maybe.withDefault (defaultForm common)
     in
-    ( { common = common, profileForm = profileForm }, Cmd.none )
+    ( { common = common
+      , profileForm = profileForm
+      , state = NotSentYet
+      }
+    , Cmd.none
+    )
 
 
 formForUser : Member -> ProfileForm
@@ -91,8 +92,8 @@ formForUser user =
     }
 
 
-defaultForm : ProfileForm
-defaultForm =
+defaultForm : Common -> ProfileForm
+defaultForm common =
     { firstName = ""
     , preferredName = ""
     , lastName = ""
@@ -101,15 +102,15 @@ defaultForm =
     , confirmPassword = ""
     , phoneNumber = ""
     , location = ""
-    , onCampus = False
+    , onCampus = True
     , major = ""
     , hometown = ""
     , passengers = 0
     , enrollment = Just Class
-    , section = Nothing
+    , section = common.info.sections |> List.head
     , about = ""
     , picture = ""
-    , arrivedAtTech = 1
+    , arrivedAtTech = common.now |> toYear common.timeZone
     , gatewayDrug = ""
     , conflicts = ""
     , dietaryRestrictions = ""
@@ -121,112 +122,41 @@ defaultForm =
 
 
 type Msg
-    = EditFirstName String
-    | EditPreferredName String
-    | EditLastName String
-    | EditEmail String
-    | EditPassword String
-    | EditConfirmPassword String
-    | EditPhoneNumber String
-    | EditLocation String
-    | EditOnCampus Bool
-    | EditMajor String
-    | EditHometown String
-    | EditPassengers Int
-    | EditEnrollment (Maybe Enrollment)
-    | EditSection String
-    | EditAbout String
-    | EditPicture String
-    | EditArrivedAtTech String
-    | EditGatewayDrug String
-    | EditConflicts String
-    | EditDietaryRestrictions String
+    = EditForm ProfileForm
     | Submit
     | OnSubmit (GreaseResult ())
-    | BackToLogin
+    | CancelEdit
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        profileForm =
-            model.profileForm
+        previousPage =
+            case model.common.user of
+                Just user ->
+                    Route.Profile user.email
+
+                Nothing ->
+                    Route.Login
     in
     case msg of
-        EditFirstName firstName ->
-            ( { model | profileForm = { profileForm | firstName = firstName } }, Cmd.none )
-
-        EditPreferredName preferredName ->
-            ( { model | profileForm = { profileForm | preferredName = preferredName } }, Cmd.none )
-
-        EditLastName lastName ->
-            ( { model | profileForm = { profileForm | lastName = lastName } }, Cmd.none )
-
-        EditEmail email ->
-            ( { model | profileForm = { profileForm | email = email } }, Cmd.none )
-
-        EditPassword password ->
-            ( { model | profileForm = { profileForm | password = password } }, Cmd.none )
-
-        EditConfirmPassword confirmPassword ->
-            ( { model | profileForm = { profileForm | confirmPassword = confirmPassword } }, Cmd.none )
-
-        EditPhoneNumber phoneNumber ->
-            ( { model | profileForm = { profileForm | phoneNumber = phoneNumber } }, Cmd.none )
-
-        EditLocation location ->
-            ( { model | profileForm = { profileForm | location = location } }, Cmd.none )
-
-        EditOnCampus onCampus ->
-            ( { model | profileForm = { profileForm | onCampus = onCampus } }, Cmd.none )
-
-        EditMajor major ->
-            ( { model | profileForm = { profileForm | major = major } }, Cmd.none )
-
-        EditHometown hometown ->
-            ( { model | profileForm = { profileForm | hometown = hometown } }, Cmd.none )
-
-        EditPassengers passengers ->
-            ( { model | profileForm = { profileForm | passengers = passengers } }, Cmd.none )
-
-        EditEnrollment enrollment ->
-            ( { model | profileForm = { profileForm | enrollment = enrollment } }, Cmd.none )
-
-        EditSection section ->
-            ( { model | profileForm = { profileForm | section = Just section } }, Cmd.none )
-
-        EditAbout about ->
-            ( { model | profileForm = { profileForm | about = about } }, Cmd.none )
-
-        EditPicture picture ->
-            ( { model | profileForm = { profileForm | picture = picture } }, Cmd.none )
-
-        EditArrivedAtTech arrivedAtTech ->
-            ( { model | profileForm = { profileForm | arrivedAtTech = String.toInt arrivedAtTech |> Maybe.withDefault 1 } }, Cmd.none )
-
-        EditGatewayDrug gatewayDrug ->
-            ( { model | profileForm = { profileForm | gatewayDrug = gatewayDrug } }, Cmd.none )
-
-        EditConflicts conflicts ->
-            ( { model | profileForm = { profileForm | conflicts = conflicts } }, Cmd.none )
-
-        EditDietaryRestrictions dietaryRestrictions ->
-            ( { model | profileForm = { profileForm | dietaryRestrictions = dietaryRestrictions } }, Cmd.none )
+        EditForm updatedForm ->
+            ( { model | profileForm = updatedForm }, Cmd.none )
 
         Submit ->
-            ( model, submit model )
+            submit model
 
         OnSubmit (Ok _) ->
-            ( model, Route.loadPage Route.Login )
+            ( model, Route.loadPage previousPage )
 
         OnSubmit (Err error) ->
-            ( model, alert "Whoops..." )
+            ( { model | state = ErrorSending error }, Cmd.none )
 
-        BackToLogin ->
-            ( model, Route.loadPage Route.Login )
+        CancelEdit ->
+            ( model, Route.loadPage previousPage )
 
 
-submit : Model -> Cmd Msg
+submit : Model -> ( Model, Cmd Msg )
 submit model =
     let
         enteredPassword =
@@ -247,12 +177,12 @@ submit model =
                 Err "Your passwords don't match."
     in
     if isNothing model.profileForm.section then
-        alert "You need a section, bucko."
+        ( model, alert "You need a section, bucko." )
 
     else
         case passHashResult of
             Err passwordError ->
-                alert passwordError
+                ( model, alert passwordError )
 
             Ok passHash ->
                 let
@@ -260,10 +190,14 @@ submit model =
                         serializeProfile model.profileForm passHash
                 in
                 if isJust model.common.user then
-                    updateMemberProfile profileJson model.common
+                    ( { model | state = Sending }
+                    , updateMemberProfile profileJson model.common
+                    )
 
                 else
-                    registerNewMember profileJson model.common
+                    ( { model | state = Sending }
+                    , registerNewMember profileJson model.common
+                    )
 
 
 updateMemberProfile : Encode.Value -> Common -> Cmd Msg
@@ -298,8 +232,12 @@ serializeProfile profile passHash =
         , ( "gatewayDrug", string profile.gatewayDrug )
         , ( "conflicts", string profile.conflicts )
         , ( "dietaryRestrictions", string profile.dietaryRestrictions )
-        , ( "enrollment", string <| (profile.enrollment |> Maybe.map enrollmentToString |> Maybe.withDefault "") )
         , ( "section", string <| Maybe.withDefault "" profile.section )
+        , ( "enrollment"
+          , profile.enrollment
+                |> Maybe.map (enrollmentToString >> string)
+                |> Maybe.withDefault null
+          )
         ]
 
 
@@ -321,10 +259,16 @@ view model =
     in
     section [ class "section" ]
         [ div [ class "container" ]
-            [ h3 [ class "title is-3" ] [ text titleText ]
-            , div [ id "edit-profile", class "box" ]
+            [ Basics.title titleText
+            , Basics.box
                 [ headerText <| isJust model.common.user
                 , viewForm model
+                , case model.state of
+                    ErrorSending error ->
+                        Basics.errorBox error
+
+                    _ ->
+                        text ""
                 ]
             ]
         ]
@@ -353,187 +297,128 @@ headerText isLoggedIn =
 viewForm : Model -> Html Msg
 viewForm model =
     let
-        fieldBlock fieldType fieldName val placeholderText msg =
-            div [ class "field" ]
-                [ p [ class "control" ]
-                    [ input
-                        [ class "input"
-                        , type_ fieldType
-                        , name fieldName
-                        , value val
-                        , placeholder placeholderText
-                        , onInput msg
-                        ]
-                        []
-                    ]
-                ]
-
-        textField =
-            fieldBlock "text"
-
-        numberField =
-            fieldBlock "number"
-
-        emailField =
-            fieldBlock "email"
-
-        phoneField =
-            fieldBlock "phone"
-
-        passwordField =
-            fieldBlock "password"
-
-        locationFieldBlock =
-            [ textField "location" model.profileForm.location "Glenn" EditLocation
-            , p [ class "control" ]
-                [ div [ class "buttons has-addons" ]
-                    [ span
-                        [ class <|
-                            "button"
-                                ++ (if model.profileForm.onCampus then
-                                        " is-primary"
-
-                                    else
-                                        ""
-                                   )
-                        , onClick <| EditOnCampus True
-                        ]
-                        [ text "On-campus" ]
-                    , span
-                        [ class <|
-                            "button"
-                                ++ (if not model.profileForm.onCampus then
-                                        " is-primary"
-
-                                    else
-                                        ""
-                                   )
-                        , onClick <| EditOnCampus False
-                        ]
-                        [ text "Off-campus" ]
-                    ]
-                ]
-            ]
-
-        passengersBlock =
-            if model.profileForm.passengers == 0 then
-                []
-
-            else
-                [ div [ class "field has-addons" ]
-                    [ p [ class "control" ]
-                        [ input
-                            [ class "input"
-                            , type_ "number"
-                            , name "passengers"
-                            , value <| String.fromInt model.profileForm.passengers
-                            , placeholder "How many?"
-                            ]
-                            []
-                        ]
-                    , p [ class "control" ]
-                        [ a [ class "button is-static" ] [ text "passengers" ] ]
-                    ]
-                ]
-
-        carFieldBlock =
-            div [ class "field is-grouped" ] <|
-                [ p [ class "control checkbox" ]
-                    [ label [ class "checkbox" ]
-                        [ input [ type_ "checkbox", name "hasCar", checked <| model.profileForm.passengers > 0 ] []
-                        , text " I have a car"
-                        ]
-                    ]
-                ]
-                    ++ passengersBlock
-
-        enrollmentBlock =
-            div [ class "field is-grouped" ]
-                [ div [ class "control" ]
-                    [ div [ class "buttons has-addons" ]
-                        [ enrollmentOptions model.profileForm (isJust model.common.user) ]
-                    ]
-                , div [ class "control" ]
-                    [ div [ class "select" ]
-                        [ select
-                            [ onInput EditSection
-                            , value <| Maybe.withDefault "" model.profileForm.section
-                            , disabled <| isNothing model.profileForm.enrollment
-                            ]
-                            (model.common.info.sections
-                                |> List.map (\sectionName -> option [ value sectionName ] [ text sectionName ])
-                            )
-                        ]
-                    ]
-                ]
+        profileForm =
+            model.profileForm
     in
     form [ onSubmit Submit, style "margin-top" "1em" ]
         -- required fields
         [ h4 [ class "title is-4" ] [ text "Really Important Stuff" ]
         , horizontalField "Name"
             Nothing
-            [ textField "firstName" model.profileForm.firstName "First" EditFirstName
-            , textField "preferredName" model.profileForm.preferredName "Preferred (optional)" EditPreferredName
-            , textField "lastName" model.profileForm.lastName "Last" EditLastName
+            [ textField "firstName"
+                profileForm.firstName
+                "First"
+                (\firstName -> EditForm { profileForm | firstName = firstName })
+            , textField "preferredName"
+                profileForm.preferredName
+                "Preferred (optional)"
+                (\preferredName -> EditForm { profileForm | preferredName = preferredName })
+            , textField "lastName"
+                profileForm.lastName
+                "Last"
+                (\lastName -> EditForm { profileForm | lastName = lastName })
             ]
         , horizontalField "E-mail"
             (Just "email")
-            [ emailField "email" model.profileForm.email "gburdell3@gatech.edu" EditEmail ]
+            [ emailField "email"
+                profileForm.email
+                "gburdell3@gatech.edu"
+                (\email -> EditForm { profileForm | email = email })
+            ]
         , horizontalField "Phone Number"
             (Just "phone")
-            [ phoneField "phone" model.profileForm.phoneNumber "6788675309" EditPhoneNumber ]
+            [ phoneField "phone"
+                profileForm.phoneNumber
+                "6788675309"
+                (\phoneNumber -> EditForm { profileForm | phoneNumber = phoneNumber })
+            ]
         , horizontalField "Password"
             Nothing
-            [ passwordField "password" model.profileForm.password "Password" EditPassword
-            , passwordField "confirmPassword" model.profileForm.confirmPassword "Confirm Password" EditConfirmPassword
+            [ passwordField "password"
+                profileForm.password
+                "Password"
+                (\password -> EditForm { profileForm | password = password })
+            , passwordField "confirmPassword"
+                profileForm.confirmPassword
+                "Confirm Password"
+                (\confirmPassword -> EditForm { profileForm | confirmPassword = confirmPassword })
             ]
-        , horizontalField "Location" Nothing locationFieldBlock
+        , horizontalField "Location" Nothing (locationFieldBlock profileForm)
         , horizontalField "Major"
             (Just "major")
-            [ textField "major" model.profileForm.major "Undecided engineering" EditMajor ]
+            [ textField "major"
+                profileForm.major
+                "Undecided engineering"
+                (\major -> EditForm { profileForm | major = major })
+            ]
         , horizontalField "Hometown"
             (Just "hometown")
-            [ textField "hometown" model.profileForm.hometown "Winslow, Arizona" EditHometown ]
+            [ textField "hometown"
+                profileForm.hometown
+                "Winslow, Arizona"
+                (\hometown -> EditForm { profileForm | hometown = hometown })
+            ]
         , horizontalField "Car"
             Nothing
-            [ carFieldBlock ]
+            [ carFieldBlock profileForm ]
         , horizontalField "Enrollment"
             Nothing
-            [ enrollmentBlock ]
+            [ enrollmentBlock model.common profileForm ]
 
         -- optional fields
         , h4 [ class "title is-4" ] [ text "Nice to Know" ]
         , horizontalField "About Me"
             (Just "about")
-            [ textField "about" model.profileForm.about "I like big butts and I cannot lie" EditAbout ]
+            [ textField "about"
+                profileForm.about
+                "I like big butts and I cannot lie"
+                (\about -> EditForm { profileForm | about = about })
+            ]
         , horizontalField "Picture URL"
             (Just "picture")
-            [ textField "picture" model.profileForm.picture "https://create.mylittlepony.movie/images/ponyparticon_bodybig.png" EditPicture ]
+            [ textField "picture"
+                profileForm.picture
+                "https://create.mylittlepony.movie/images/ponyparticon_bodybig.png"
+                (\picture -> EditForm { profileForm | picture = picture })
+            ]
         , horizontalField "Arrived at Tech"
             (Just "arrivedAtTech")
-            [ numberField "arrivedAtTech" (String.fromInt model.profileForm.arrivedAtTech) "2099" EditArrivedAtTech ]
-        , actionButtons <| (model.common.user |> Maybe.map .email)
+            [ numberField "arrivedAtTech"
+                (String.fromInt profileForm.arrivedAtTech)
+                "2099"
+                (\arrivedAtTech ->
+                    EditForm
+                        { profileForm
+                            | arrivedAtTech =
+                                arrivedAtTech
+                                    |> String.toInt
+                                    |> Maybe.withDefault 0
+                        }
+                )
+            ]
+        , actionButtons (model.state == Sending) (model.common.user |> Maybe.map .email)
         ]
 
 
-horizontalField : String -> Maybe String -> (List (Html Msg) -> Html Msg)
-horizontalField name forField =
-    \content ->
-        div [ class "field is-horizontal" ]
-            [ div [ class "field-label is-normal" ]
-                [ label [ class "label", for (Maybe.withDefault "" forField) ] [ text name ] ]
-            , div [ class "field-body" ] content
-            ]
-
-
-actionButtons : Maybe String -> Html Msg
-actionButtons maybeEmail =
+actionButtons : Bool -> Maybe String -> Html Msg
+actionButtons sending maybeEmail =
     let
         backButton email =
             Basics.linkButton "Back" (Route.Profile email)
 
         saveButton =
-            button [ type_ "submit", class "button is-primary" ] [ text "Save" ]
+            button
+                [ type_ "submit"
+                , class <|
+                    "button is-primary"
+                        ++ (if sending then
+                                " is-loading"
+
+                            else
+                                ""
+                           )
+                ]
+                [ text "Save" ]
     in
     div [ class "buttons is-right" ] <|
         (case maybeEmail of
@@ -544,6 +429,103 @@ actionButtons maybeEmail =
                 []
         )
             ++ [ saveButton ]
+
+
+carFieldBlock : ProfileForm -> Html Msg
+carFieldBlock profileForm =
+    div [ class "field is-grouped" ] <|
+        [ p [ class "control checkbox" ]
+            [ label [ class "checkbox" ]
+                [ input
+                    [ type_ "checkbox"
+                    , name "hasCar"
+                    , checked <| profileForm.passengers > 0
+                    , onCheck
+                        (\hasCar ->
+                            EditForm
+                                { profileForm
+                                    | passengers =
+                                        if hasCar then
+                                            1
+
+                                        else
+                                            0
+                                }
+                        )
+                    ]
+                    []
+                , text " I have a car"
+                ]
+            ]
+        ]
+            ++ passengersBlock profileForm
+
+
+passengersBlock : ProfileForm -> List (Html Msg)
+passengersBlock profileForm =
+    if profileForm.passengers == 0 then
+        []
+
+    else
+        [ div [ class "field has-addons" ]
+            [ p [ class "control" ]
+                [ input
+                    [ class "input"
+                    , type_ "number"
+                    , name "passengers"
+                    , value <| String.fromInt profileForm.passengers
+                    , placeholder "How many?"
+                    , onInput
+                        (\passengers ->
+                            EditForm
+                                { profileForm
+                                    | passengers =
+                                        passengers
+                                            |> String.toInt
+                                            |> Maybe.withDefault 0
+                                }
+                        )
+                    ]
+                    []
+                ]
+            , p [ class "control" ]
+                [ a [ class "button is-static" ] [ text "passengers" ] ]
+            ]
+        ]
+
+
+locationFieldBlock : ProfileForm -> List (Html Msg)
+locationFieldBlock profileForm =
+    [ textField "location" profileForm.location "Glenn" (\location -> EditForm { profileForm | location = location })
+    , p [ class "control" ]
+        [ div [ class "buttons has-addons" ]
+            [ span
+                [ class <|
+                    "button"
+                        ++ (if profileForm.onCampus then
+                                " is-primary"
+
+                            else
+                                ""
+                           )
+                , onClick <| EditForm { profileForm | onCampus = True }
+                ]
+                [ text "On-campus" ]
+            , span
+                [ class <|
+                    "button"
+                        ++ (if not profileForm.onCampus then
+                                " is-primary"
+
+                            else
+                                ""
+                           )
+                , onClick <| EditForm { profileForm | onCampus = False }
+                ]
+                [ text "Off-campus" ]
+            ]
+        ]
+    ]
 
 
 enrollmentOptions : ProfileForm -> Bool -> Html Msg
@@ -561,7 +543,7 @@ enrollmentOptions profile isLoggedIn =
         enrollmentOption optionName enrollment =
             span
                 [ class <| buttonClass <| profile.enrollment == enrollment
-                , onClick <| EditEnrollment enrollment
+                , onClick <| EditForm { profile | enrollment = enrollment }
                 ]
                 [ text optionName ]
     in
@@ -577,6 +559,96 @@ enrollmentOptions profile isLoggedIn =
                 , [ enrollmentOption "Club" (Just Club) ]
                 ]
         ]
+
+
+enrollmentBlock : Common -> ProfileForm -> Html Msg
+enrollmentBlock common profileForm =
+    div [ class "field is-grouped" ]
+        [ div [ class "control" ]
+            [ div [ class "buttons has-addons" ]
+                [ enrollmentOptions profileForm (isJust common.user) ]
+            ]
+        , div [ class "control" ]
+            [ div [ class "select" ]
+                [ select
+                    [ onInput (\section -> EditForm { profileForm | section = Just section })
+                    , value <| Maybe.withDefault "" profileForm.section
+                    , disabled <| isNothing profileForm.enrollment
+                    ]
+                    (common.info.sections
+                        |> List.map
+                            (\sectionName ->
+                                option
+                                    [ value sectionName
+                                    , selected
+                                        (profileForm.section
+                                            |> Maybe.map (\s -> s == sectionName)
+                                            |> Maybe.withDefault False
+                                        )
+                                    ]
+                                    [ text sectionName ]
+                            )
+                    )
+                ]
+            ]
+        ]
+
+
+horizontalField : String -> Maybe String -> (List (Html Msg) -> Html Msg)
+horizontalField name forField =
+    \content ->
+        div [ class "field is-horizontal" ]
+            [ div [ class "field-label is-normal" ]
+                [ label
+                    [ class "label"
+                    , for (forField |> Maybe.withDefault "")
+                    ]
+                    [ text name ]
+                ]
+            , div [ class "field-body" ] content
+            ]
+
+
+fieldBlock : String -> String -> String -> String -> (String -> Msg) -> Html Msg
+fieldBlock fieldType fieldName val placeholderText msg =
+    div [ class "field" ]
+        [ p [ class "control" ]
+            [ input
+                [ class "input"
+                , type_ fieldType
+                , name fieldName
+                , value val
+                , placeholder placeholderText
+                , onInput msg
+                ]
+                []
+            ]
+        ]
+
+
+textField : String -> String -> String -> (String -> Msg) -> Html Msg
+textField =
+    fieldBlock "text"
+
+
+numberField : String -> String -> String -> (String -> Msg) -> Html Msg
+numberField =
+    fieldBlock "number"
+
+
+emailField : String -> String -> String -> (String -> Msg) -> Html Msg
+emailField =
+    fieldBlock "email"
+
+
+phoneField : String -> String -> String -> (String -> Msg) -> Html Msg
+phoneField =
+    fieldBlock "phone"
+
+
+passwordField : String -> String -> String -> (String -> Msg) -> Html Msg
+passwordField =
+    fieldBlock "password"
 
 
 

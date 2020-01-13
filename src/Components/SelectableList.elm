@@ -1,24 +1,32 @@
-module Components.SelectableList exposing (selectableList)
+module Components.SelectableList exposing (selectableList, selectableListFull)
 
-import Color exposing (Color)
+import Color
 import Components.Basics exposing (remoteContent)
-import Html exposing (Html, a, button, div, form, h1, img, input, label, p, section, span, table, tbody, td, text, tfoot, thead, tr)
-import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
+import Html exposing (Html, div, p, table, tbody, text, tfoot, thead, tr)
+import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
-import Maybe.Extra exposing (filter, isJust)
 import Utils exposing (RemoteData(..), goldColor)
 
 
-type alias SelectableListData a msg =
-    { listItems : RemoteData (List a)
-    , render : a -> List (Html msg)
-    , isSelected : a -> Bool
-    , onSelect : a -> msg
-    , messageIfEmpty : String
+type alias SelectableList a msg b =
+    { b
+        | listItems : RemoteData (List a)
+        , render : a -> List (Html msg)
+        , isSelected : a -> Bool
+        , onSelect : a -> msg
+        , messageIfEmpty : String
     }
 
 
-selectableList : SelectableListData a msg -> Html msg
+type alias SelectableListFull a msg =
+    SelectableList a
+        msg
+        { contentAtTop : Html msg
+        , contentAtBottom : Html msg
+        }
+
+
+selectableList : SelectableList a msg b -> Html msg
 selectableList data =
     div [ class "column is-narrow" ]
         [ div [ class "box" ]
@@ -26,7 +34,18 @@ selectableList data =
         ]
 
 
-allRows : SelectableListData a msg -> List a -> Html msg
+selectableListFull : SelectableListFull a msg -> Html msg
+selectableListFull data =
+    div [ class "column is-narrow" ]
+        [ div [ class "box" ]
+            [ data.contentAtTop
+            , data.listItems |> remoteContent (allRows data)
+            , data.contentAtBottom
+            ]
+        ]
+
+
+allRows : SelectableList a msg b -> List a -> Html msg
 allRows data items =
     if List.isEmpty items then
         p [] [ text data.messageIfEmpty ]
@@ -41,7 +60,7 @@ allRows data items =
             ]
 
 
-singleRow : SelectableListData a msg -> a -> Html msg
+singleRow : SelectableList a msg b -> a -> Html msg
 singleRow data listItem =
     tr
         [ style "background-color" <|

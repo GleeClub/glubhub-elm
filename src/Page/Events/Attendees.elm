@@ -3,12 +3,11 @@ module Page.Events.Attendees exposing (Model, Msg(..), init, update, view)
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
 import Html exposing (Html, br, div, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan, href, id, placeholder, src, style)
-import Http
+import Html.Attributes exposing (class, id, style)
 import Json.Decode as Decode
-import Models.Event exposing (EventAttendee, Member, eventAttendeeDecoder)
+import Models.Event exposing (EventAttendee, eventAttendeeDecoder)
 import Task
-import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), fullName, getRequest, resultToRemote)
 
 
 
@@ -16,13 +15,12 @@ import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
 
 
 type alias Model =
-    { attendees : RemoteData (List EventAttendee)
-    }
+    RemoteData (List EventAttendee)
 
 
 init : Common -> Int -> ( Model, Cmd Msg )
 init common eventId =
-    ( { attendees = Loading }, loadAttendees common eventId )
+    ( Loading, loadAttendees common eventId )
 
 
 
@@ -34,10 +32,10 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update msg _ =
     case msg of
         OnLoadAttendees attendeesResult ->
-            ( { attendees = resultToRemote attendeesResult }, Cmd.none )
+            ( resultToRemote attendeesResult, Cmd.none )
 
 
 
@@ -75,7 +73,7 @@ separateAttendees attendees =
 view : Model -> Html Msg
 view model =
     div [ id "attendees" ]
-        [ model.attendees |> Basics.remoteContent attendeeTables ]
+        [ model |> Basics.remoteContent attendeeTables ]
 
 
 attendeeTables : List EventAttendee -> Html Msg
@@ -113,5 +111,5 @@ attendeeTable ( confirmed, notConfirmed ) =
 attendeeNameList : List EventAttendee -> List (Html Msg)
 attendeeNameList attendees =
     attendees
-        |> List.map (\attendee -> text attendee.member.fullName)
+        |> List.map (\attendee -> text (attendee.member |> fullName))
         |> List.intersperse (br [] [])

@@ -1,15 +1,38 @@
-module Models.Info exposing (Enrollment(..), EventType, Info, MediaType, Permission, PermissionType(..), Role, Semester, StorageType(..), Uniform, emptyInfo, emptySemester, enrollmentDecoder, enrollmentToString, eventTypeDecoder, infoDecoder, mediaTypeDecoder, permissionDecoder, permissionTypeDecoder, posixDecoder, roleDecoder, semesterDecoder, storageTypeDecoder, uniformDecoder)
+module Models.Info exposing
+    ( DocumentLink
+    , Enrollment(..)
+    , EventType
+    , Info
+    , MediaType
+    , Permission
+    , PermissionType(..)
+    , Role
+    , Semester
+    , StorageType(..)
+    , Uniform
+    , documentLinkDecoder
+    , enrollmentDecoder
+    , enrollmentToString
+    , eventTypeDecoder
+    , infoDecoder
+    , mediaTypeDecoder
+    , permissionDecoder
+    , permissionTypeDecoder
+    , posixDecoder
+    , roleDecoder
+    , semesterDecoder
+    , storageTypeDecoder
+    , uniformDecoder
+    )
 
-import Iso8601
-import Json.Decode as Decode exposing (Decoder, bool, float, int, maybe, nullable, string, succeed)
-import Json.Decode.Pipeline exposing (custom, optional, required)
+import Json.Decode as Decode exposing (Decoder, bool, int, maybe, nullable, string, succeed)
+import Json.Decode.Pipeline exposing (optional, required)
 import Time exposing (Posix, millisToPosix)
 
 
 posixDecoder : Decoder Posix
 posixDecoder =
-    -- int |> Decode.andThen (\i -> Decode.succeed <| Time.millisToPosix i)
-    Iso8601.decoder
+    int |> Decode.map Time.millisToPosix
 
 
 type alias Info =
@@ -20,6 +43,7 @@ type alias Info =
     , sections : List String
     , transactionTypes : List String
     , uniforms : List Uniform
+    , documents : List DocumentLink
     }
 
 
@@ -33,18 +57,20 @@ infoDecoder =
         |> required "sections" (Decode.list string)
         |> required "transactionTypes" (Decode.list string)
         |> required "uniforms" (Decode.list uniformDecoder)
+        |> optional "documents" (Decode.list documentLinkDecoder) []
 
 
-emptyInfo : Info
-emptyInfo =
-    { eventTypes = []
-    , mediaTypes = []
-    , permissions = []
-    , roles = []
-    , sections = []
-    , transactionTypes = []
-    , uniforms = []
+type alias DocumentLink =
+    { name : String
+    , url : String
     }
+
+
+documentLinkDecoder : Decoder DocumentLink
+documentLinkDecoder =
+    Decode.succeed DocumentLink
+        |> required "name" string
+        |> required "url" string
 
 
 type Enrollment
@@ -58,23 +84,17 @@ enrollmentDecoder =
         |> Decode.andThen
             (\x ->
                 case x of
-                    Just "inactive" ->
-                        Decode.succeed Nothing
-
-                    Just "" ->
-                        Decode.succeed Nothing
-
                     Nothing ->
                         Decode.succeed Nothing
 
-                    Just "class" ->
+                    Just "Class" ->
                         Decode.succeed <| Just Class
 
-                    Just "club" ->
+                    Just "Club" ->
                         Decode.succeed <| Just Club
 
-                    other ->
-                        Decode.fail "Enrollments can only be \"class\", \"club\", \"inactive\", or null"
+                    _ ->
+                        Decode.fail "Enrollments can only be \"Class\", \"Club\", or null"
             )
 
 
@@ -82,10 +102,10 @@ enrollmentToString : Enrollment -> String
 enrollmentToString enrollment =
     case enrollment of
         Class ->
-            "class"
+            "Class"
 
         Club ->
-            "club"
+            "Club"
 
 
 type alias MediaType =
@@ -114,14 +134,14 @@ storageTypeDecoder =
         |> Decode.andThen
             (\x ->
                 case x of
-                    "local" ->
+                    "Local" ->
                         Decode.succeed LocalStorage
 
-                    "remote" ->
+                    "Remote" ->
                         Decode.succeed RemoteStorage
 
-                    other ->
-                        Decode.fail "StorageType can only be \"local\" or \"remote\""
+                    _ ->
+                        Decode.fail "StorageType can only be \"Local\" or \"Remote\""
             )
 
 
@@ -164,14 +184,14 @@ permissionTypeDecoder =
         |> Decode.andThen
             (\x ->
                 case x of
-                    "static" ->
+                    "Static" ->
                         Decode.succeed StaticPermission
 
-                    "event" ->
+                    "Event" ->
                         Decode.succeed EventPermission
 
-                    other ->
-                        Decode.fail "PermissionType can only be \"static\" or \"event\""
+                    _ ->
+                        Decode.fail "PermissionType can only be \"Static\" or \"Event\""
             )
 
 
@@ -224,13 +244,3 @@ semesterDecoder =
         |> required "endDate" posixDecoder
         |> required "gigRequirement" int
         |> required "current" bool
-
-
-emptySemester : Semester
-emptySemester =
-    { name = ""
-    , startDate = millisToPosix 0
-    , endDate = millisToPosix 0
-    , gigRequirement = 5
-    , current = True
-    }

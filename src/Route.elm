@@ -22,6 +22,7 @@ type Route
     | Repertoire (Maybe Int)
     | Minutes MinutesRoute
     | ForgotPassword
+    | ResetPassword (Maybe String)
     | Admin (Maybe AdminTab)
 
 
@@ -40,6 +41,7 @@ type alias MinutesRoute =
 type EventTab
     = EventDetails
     | EventAttendees
+    | EventAttendance
     | EventSetlist
     | EventCarpools
     | EventRequestAbsence
@@ -53,6 +55,9 @@ eventTabString tab =
 
         EventAttendees ->
             "attendees"
+
+        EventAttendance ->
+            "attendance"
 
         EventSetlist ->
             "setlist"
@@ -73,6 +78,9 @@ eventTabParser tab =
         "attendees" ->
             Just EventAttendees
 
+        "attendance" ->
+            Just EventAttendance
+
         "setlist" ->
             Just EventSetlist
 
@@ -87,21 +95,21 @@ eventTabParser tab =
 
 
 type MinutesTab
-    = Public
-    | Private
-    | Edit
+    = PublicMinutes
+    | PrivateMinutes
+    | EditMinutes
 
 
 minutesTabString : MinutesTab -> String
 minutesTabString tab =
     case tab of
-        Public ->
+        PublicMinutes ->
             "public"
 
-        Private ->
+        PrivateMinutes ->
             "private"
 
-        Edit ->
+        EditMinutes ->
             "edit"
 
 
@@ -109,43 +117,42 @@ minutesTabParser : String -> Maybe MinutesTab
 minutesTabParser tab =
     case tab of
         "public" ->
-            Just Public
+            Just PublicMinutes
 
         "private" ->
-            Just Private
+            Just PrivateMinutes
 
         "edit" ->
-            Just Edit
+            Just EditMinutes
 
         _ ->
             Nothing
 
 
 type AdminTab
-    = AdminCreateEvent
+    = AdminCreateEvent (Maybe Int)
     | AdminGigRequest
-    | AdminMakeAnnouncement
     | AdminAbsenceRequests
     | AdminEditSemester
     | AdminOfficerPositions
-    | AdminAnnouncements
     | AdminSitePermissions
     | AdminUniforms
     | AdminDues
     | AdminDocumentLinks
+    | AdminWebmasterTools
 
 
 adminTabString : AdminTab -> String
 adminTabString tab =
     case tab of
-        AdminCreateEvent ->
+        AdminCreateEvent Nothing ->
             "create-event"
+
+        AdminCreateEvent (Just gigRequestId) ->
+            "create-event/" ++ String.fromInt gigRequestId
 
         AdminGigRequest ->
             "gig-request"
-
-        AdminMakeAnnouncement ->
-            "make-announcement"
 
         AdminAbsenceRequests ->
             "absence-requests"
@@ -155,9 +162,6 @@ adminTabString tab =
 
         AdminOfficerPositions ->
             "officer-positions"
-
-        AdminAnnouncements ->
-            "announcements"
 
         AdminSitePermissions ->
             "site-permissions"
@@ -171,18 +175,18 @@ adminTabString tab =
         AdminDocumentLinks ->
             "document-links"
 
+        AdminWebmasterTools ->
+            "webmaster-tools"
+
 
 adminTabParser : String -> Maybe AdminTab
 adminTabParser tab =
     case tab of
         "create-event" ->
-            Just AdminCreateEvent
+            Just (AdminCreateEvent Nothing)
 
         "gig-request" ->
             Just AdminGigRequest
-
-        "make-announcement" ->
-            Just AdminMakeAnnouncement
 
         "absence-requests" ->
             Just AdminAbsenceRequests
@@ -192,9 +196,6 @@ adminTabParser tab =
 
         "officer-positions" ->
             Just AdminOfficerPositions
-
-        "announcements" ->
-            Just AdminAnnouncements
 
         "site-permissions" ->
             Just AdminSitePermissions
@@ -207,6 +208,9 @@ adminTabParser tab =
 
         "document-links" ->
             Just AdminDocumentLinks
+
+        "webmaster-tools" ->
+            Just AdminWebmasterTools
 
         _ ->
             Nothing
@@ -235,11 +239,16 @@ parser =
         , Parser.map (Minutes { id = Nothing, tab = Nothing }) (s "minutes")
         , Parser.map (\id -> Minutes { id = Just id, tab = Nothing }) (s "minutes" </> int)
         , Parser.map (\id tab -> Minutes { id = Just id, tab = Just tab }) (s "minutes" </> int </> custom "minutesTab" minutesTabParser)
+
+        -- /forgot-password, /reset-password, and /reset-password/{token}
         , Parser.map ForgotPassword (s "forgot-password")
+        , Parser.map (ResetPassword Nothing) (s "reset-password")
+        , Parser.map (\token -> ResetPassword (Just token)) (s "reset-password" </> string)
 
         -- /admin and /admin/{tab}
         , Parser.map (Admin Nothing) (s "admin")
         , Parser.map (\tab -> Admin (Just tab)) (s "admin" </> custom "adminTab" adminTabParser)
+        , Parser.map (\gigRequestId -> Admin (Just <| AdminCreateEvent (Just gigRequestId))) (s "admin" </> s "create-event" </> int)
         ]
 
 
@@ -327,6 +336,12 @@ routeToString page =
 
                 ForgotPassword ->
                     [ "forgot-password" ]
+
+                ResetPassword Nothing ->
+                    [ "reset-password" ]
+
+                ResetPassword (Just token) ->
+                    [ "reset-password", token ]
 
                 Admin adminTab ->
                     case adminTab of

@@ -1,0 +1,1 @@
+elm-app build && zip -r -X build.zip ./build

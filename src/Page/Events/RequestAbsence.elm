@@ -1,16 +1,10 @@
 module Page.Events.RequestAbsence exposing (requestAbsence)
 
 import Components.Basics as Basics
-import Html exposing (Html, a, br, button, div, form, h1, h2, img, label, section, table, tbody, td, text, textarea, thead, tr)
-import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
-import Json.Encode as Encode
-import Maybe.Extra
+import Html exposing (Html, br, button, div, form, h1, h2, label, text, textarea)
+import Html.Attributes exposing (class, id, placeholder, style, type_, value)
+import Html.Events exposing (onInput, onSubmit)
 import Models.Event exposing (FullEvent)
-import Route exposing (EventTab, Route)
-import Time exposing (Posix)
-import Utils exposing (Common, alert, apiUrl, postRequest)
 
 
 type alias RequestAbsence msg =

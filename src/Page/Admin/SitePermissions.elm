@@ -2,18 +2,18 @@ module Page.Admin.SitePermissions exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, p, section, span, table, tbody, td, text, textarea, th, thead, tr)
-import Html.Attributes exposing (checked, class, colspan, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode exposing (field, string)
+import Html exposing (Html, div, input, table, tbody, td, text, th, tr)
+import Html.Attributes exposing (checked, class, style, type_)
+import Html.Events exposing (onCheck)
+import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Models.Admin exposing (MemberPermission, RolePermission, rolePermissionDecoder)
+import Maybe.Extra exposing (isJust)
+import Models.Admin exposing (RolePermission, rolePermissionDecoder)
 import Models.Info exposing (Permission, PermissionType(..))
-import Route exposing (AdminTab(..), Route)
+import Route exposing (AdminTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, postRequest, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, getRequest, postRequest, resultToRemote)
 
 
 
@@ -49,31 +49,30 @@ update msg model =
             ( { model | permissions = resultToRemote result }, Cmd.none )
 
         OnTogglePermission result ->
-            ( { model | state = resultToSubmissionState result }, Cmd.none )
+            checkSubmissionResult model result
 
         TogglePermission permission ->
             case model.permissions of
                 Loaded permissions ->
-                    case permissions |> find (permissionsAreEqual permission) of
-                        Just foundPermission ->
-                            ( { model
-                                | permissions =
-                                    Loaded
-                                        (permissions
-                                            |> List.filter (permissionsAreEqual permission >> not)
-                                        )
-                                , state = Sending
-                              }
-                            , disablePermission model.common permission
-                            )
+                    if permissions |> find (permissionsAreEqual permission) |> isJust then
+                        ( { model
+                            | permissions =
+                                Loaded
+                                    (permissions
+                                        |> List.filter (permissionsAreEqual permission >> not)
+                                    )
+                            , state = Sending
+                          }
+                        , disablePermission model.common permission
+                        )
 
-                        Nothing ->
-                            ( { model
-                                | permissions = Loaded (permissions ++ [ permission ])
-                                , state = Sending
-                              }
-                            , enablePermission model.common permission
-                            )
+                    else
+                        ( { model
+                            | permissions = Loaded (permissions ++ [ permission ])
+                            , state = Sending
+                          }
+                        , enablePermission model.common permission
+                        )
 
                 _ ->
                     ( model, Cmd.none )

@@ -2,19 +2,17 @@ module Page.Login exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
 import Components.Basics as Basics
-import Error exposing (GreaseError(..), GreaseResult, parseResponse)
-import Html exposing (Html, a, button, div, form, h1, img, input, label, section, span, text)
-import Html.Attributes exposing (class, href, id, placeholder, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
-import Http exposing (Metadata)
+import Error exposing (GreaseError(..), GreaseResult)
+import Html exposing (Html, button, div, form, img, text)
+import Html.Attributes exposing (class, src, style, type_)
+import Html.Events exposing (onSubmit)
 import Http.Detailed exposing (Error(..))
-import Json.Decode as Decode exposing (field, string)
+import Json.Decode exposing (field, string)
 import Json.Encode as Encode
 import MD5
-import Models.Event exposing (Member, memberDecoder)
-import Route exposing (Route)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, apiUrl, setToken)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert, isLoadingClass, postRequestFull, setToken)
 
 
 
@@ -90,18 +88,9 @@ submitLogin model =
                 [ ( "email", Encode.string model.email )
                 , ( "passHash", Encode.string passHash )
                 ]
-
-        task =
-            Http.task
-                { method = "POST"
-                , url = apiUrl ++ "/login"
-                , body = Http.jsonBody loginJson
-                , headers = []
-                , resolver = Http.stringResolver <| parseResponse (field "token" string)
-                , timeout = Nothing
-                }
     in
-    task |> Task.attempt OnSubmitLogin
+    postRequestFull { token = "" } "/login" loginJson (field "token" string)
+        |> Task.attempt OnSubmitLogin
 
 
 onSuccessfulLogin : String -> Cmd Msg
@@ -117,12 +106,14 @@ view : Model -> Html Msg
 view model =
     div [ class "container fullheight" ]
         [ div [ class "columns is-centered is-vcentered", style "display" "flex" ]
-            [ Basics.narrowColumn
-                [ form [ id "login", class "box", onSubmit Submit ]
-                    [ logo
-                    , emailField model
-                    , passwordField model
-                    , actionButtons model
+            [ form [ onSubmit Submit ]
+                [ Basics.narrowColumn
+                    [ Basics.box
+                        [ logo
+                        , emailField model
+                        , passwordField model
+                        , actionButtons model
+                        ]
                     ]
                 ]
             ]
@@ -131,10 +122,7 @@ view model =
 
 logo : Html Msg
 logo =
-    h1 [ class "title is-1", style "text-align" "center" ]
-        [ span [ style "color" "#b4a46a" ] [ text "Glub" ]
-        , span [ style "color" "#666" ] [ text "Hub" ]
-        ]
+    img [ style "width" "100%", src "./glubhub.svg" ] []
 
 
 emailField : Model -> Html Msg
@@ -168,14 +156,7 @@ actionButtons model =
         , Basics.linkButton "Forgot" Route.ForgotPassword
         , button
             [ type_ "submit"
-            , class "button is-primary"
-            , class <|
-                case model.state of
-                    Sending ->
-                        " is-loading"
-
-                    _ ->
-                        ""
+            , class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
             ]
             [ text "Sign In" ]
         ]

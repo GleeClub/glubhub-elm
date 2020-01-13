@@ -2,19 +2,18 @@ module Page.Admin.OfficerPositions exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, form, h1, i, img, input, label, li, option, p, section, select, span, table, tbody, td, text, textarea, th, thead, tr, ul)
-import Html.Attributes exposing (class, colspan, href, id, selected, src, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
-import Http
-import Json.Decode as Decode exposing (field, string)
+import Html exposing (Html, div, option, select, span, table, td, text, tr)
+import Html.Attributes exposing (class, selected, style, value)
+import Html.Events exposing (onInput)
+import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Maybe.Extra exposing (isJust, isNothing)
-import Models.Event exposing (Member, MemberRole, memberDecoder, memberRoleDecoder)
+import Maybe.Extra exposing (isNothing)
+import Models.Event exposing (Member, MemberRole, memberRoleDecoder)
 import Models.Info exposing (Role)
-import Route exposing (AdminTab(..), Route)
+import Route exposing (AdminTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
 
 
 
@@ -249,7 +248,7 @@ memberDropdown role allMembers selectedMember =
                                                     |> Maybe.withDefault False
                                                 )
                                             ]
-                                            [ text m.fullName ]
+                                            [ text (m |> fullName) ]
                                     )
                            )
                     )

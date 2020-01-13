@@ -2,14 +2,13 @@ module Page.Events.Carpools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, div, li, text, ul)
-import Html.Attributes exposing (class, id, style)
-import Http
+import Html exposing (Html, b, br, div, li, text, ul)
+import Html.Attributes exposing (style)
 import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
-import Route exposing (Route)
+import Route
 import Task
-import Utils exposing (Common, RemoteData(..), getRequest, permittedTo, resultToRemote)
+import Utils exposing (Common, RemoteData(..), fullName, getRequest, permittedTo, resultToRemote)
 
 
 
@@ -107,7 +106,7 @@ singleCarpool carpool =
             carpool.passengers |> List.filter (\p -> p.email /= carpool.driver.email)
 
         passengerItem passenger =
-            li [] [ text <| passenger.fullName ]
+            li [] [ text (passenger |> fullName) ]
 
         passengerBlock =
             if List.isEmpty passengers then
@@ -117,7 +116,7 @@ singleCarpool carpool =
                 ul [] <| List.map passengerItem passengers
     in
     li []
-        [ b [] [ text carpool.driver.fullName ]
+        [ b [] [ text (carpool.driver |> fullName) ]
         , text " is driving "
         , passengerBlock
         , br [] []
