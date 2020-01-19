@@ -1,4 +1,4 @@
-module Page.Home exposing (Model, Msg(..), attendanceMessage, gradesBlock, init, loadEvents, pastAndFutureEvents, upcomingEvents, update, view, volunteerism)
+module Page.Home exposing (Model, Msg(..), attendanceMessage, gradesBlock, init, loadEvents, upcomingEvents, update, view, volunteerism)
 
 import Components.Basics as Basics
 import Datetime exposing (dateFormatter, fullDateTimeFormatter, timeFromNow)
@@ -9,12 +9,12 @@ import Html.Attributes exposing (class, href, id, style)
 import Json.Decode as Decode
 import List.Extra exposing (last)
 import Maybe.Extra exposing (filter, isJust)
-import Models.Event exposing (FullEvent, Grades, fullEventDecoder)
+import Models.Event exposing (Event, Grades, eventDecoder)
 import Models.Info exposing (Semester)
 import Route
 import Task
-import Time exposing (Zone, posixToMillis)
-import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote, romanNumeral)
+import Time exposing (Zone)
+import Utils exposing (Common, RemoteData(..), eventIsOver, getRequest, resultToRemote, romanNumeral)
 
 
 
@@ -23,7 +23,7 @@ import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote, roman
 
 type alias Model =
     { common : Common
-    , events : RemoteData (List FullEvent)
+    , events : RemoteData (List Event)
     , hoveredEvent : Maybe HoveredEvent
     }
 
@@ -38,7 +38,7 @@ init common =
 
 
 type Msg
-    = OnLoadEvents (GreaseResult (List FullEvent))
+    = OnLoadEvents (GreaseResult (List Event))
     | HoverOverEvent (Maybe HoveredEvent)
     | ClearHover
 
@@ -74,13 +74,8 @@ update msg model =
 
 loadEvents : Common -> Cmd Msg
 loadEvents common =
-    getRequest common "/events?full=true" (Decode.list fullEventDecoder)
+    getRequest common "/events?full=true" (Decode.list eventDecoder)
         |> Task.attempt OnLoadEvents
-
-
-pastAndFutureEvents : Common -> List FullEvent -> ( List FullEvent, List FullEvent )
-pastAndFutureEvents common allEvents =
-    allEvents |> List.partition (\e -> posixToMillis e.callTime <= posixToMillis common.now)
 
 
 attendanceMessage : Maybe Grades -> String
@@ -119,7 +114,7 @@ view model =
                 \events ->
                     let
                         ( pastEvents, futureEvents ) =
-                            pastAndFutureEvents model.common events
+                            events |> List.partition (eventIsOver model.common)
 
                         maybeGrades =
                             model.common.user |> Maybe.andThen .grades
@@ -144,14 +139,14 @@ view model =
            )
 
 
-gradesBlock : Semester -> Maybe Grades -> List FullEvent -> Html Msg
+gradesBlock : Semester -> Maybe Grades -> List Event -> Html Msg
 gradesBlock semester grades pastEvents =
     let
         finalGrade =
             pastEvents
                 |> List.Extra.last
-                |> Maybe.andThen .attendance
-                |> Maybe.andThen .partialScore
+                |> Maybe.andThen .gradeChange
+                |> Maybe.map .partialScore
                 |> Maybe.withDefault 100.0
 
         attendanceIssueEmail =
@@ -160,7 +155,7 @@ gradesBlock semester grades pastEvents =
         scoreText =
             p []
                 [ text "Right now you have a "
-                , strong [] [ text <| String.fromFloat (roundToTwoDigits finalGrade) ]
+                , strong [] [ text <| String.fromFloat finalGrade ]
                 , text "."
                 , br [] []
                 , span [ class "has-text-grey-light is-italic" ]
@@ -200,22 +195,22 @@ eventHoverBox common hoveredEvent =
         Just event ->
             let
                 gradeChange =
-                    event.event.attendance
-                        |> Maybe.andThen .gradeChange
+                    event.event.gradeChange
+                        |> Maybe.map .change
                         |> Maybe.withDefault 0.0
                         |> roundToTwoDigits
                         |> String.fromFloat
 
                 partialScore =
-                    event.event.attendance
-                        |> Maybe.andThen .partialScore
+                    event.event.gradeChange
+                        |> Maybe.map .partialScore
                         |> Maybe.withDefault 0.0
                         |> roundToTwoDigits
                         |> String.fromFloat
 
                 changeReason =
-                    event.event.attendance
-                        |> Maybe.andThen .gradeChangeReason
+                    event.event.gradeChange
+                        |> Maybe.map .reason
                         |> Maybe.withDefault ""
             in
             div
@@ -237,7 +232,7 @@ eventHoverBox common hoveredEvent =
                 ]
 
 
-upcomingEvents : Common -> List FullEvent -> Html Msg
+upcomingEvents : Common -> List Event -> Html Msg
 upcomingEvents common futureEvents =
     let
         singleEvent index event =
@@ -266,10 +261,10 @@ upcomingEvents common futureEvents =
         ]
 
 
-volunteerism : Zone -> List FullEvent -> Int -> Html Msg
+volunteerism : Zone -> List Event -> Int -> Html Msg
 volunteerism timeZone pastEvents gigRequirement =
     let
-        attendedVolunteerEvent : FullEvent -> Bool
+        attendedVolunteerEvent : Event -> Bool
         attendedVolunteerEvent event =
             event.gigCount && (event.attendance |> Maybe.map .didAttend |> Maybe.withDefault False)
 
@@ -318,6 +313,7 @@ volunteerism timeZone pastEvents gigRequirement =
                                 )
                                 [ gigIcon gig ]
                         )
+                    |> List.intersperse (text " ")
                 )
             ]
         ]

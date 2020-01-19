@@ -14,7 +14,6 @@ port module Utils exposing
     , getRequest
     , goldColor
     , handleJsonResponse
-    , isActiveClass
     , isLoadingClass
     , isPrimaryClass
     , mapLoaded
@@ -30,7 +29,6 @@ port module Utils exposing
     , romanNumeral
     , scrollToElement
     , setToken
-    , showIfPermittedTo
     , submissionStateBoxId
     , timeout
     )
@@ -44,8 +42,7 @@ import Html.Parser.Util
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Maybe.Extra
-import Models.Event exposing (HasCallAndReleaseTimes, Member)
+import Models.Event exposing (Event, Member)
 import Models.Info exposing (Info, Semester)
 import Task exposing (Task)
 import Time exposing (Posix, Zone, posixToMillis)
@@ -122,15 +119,6 @@ type SubmissionState
 ---- FUNCTIONS ----
 
 
-optionalSingleton : Bool -> Html msg -> List (Html msg)
-optionalSingleton shouldRender content =
-    if shouldRender then
-        [ content ]
-
-    else
-        []
-
-
 mapLoaded : (a -> b) -> RemoteData a -> RemoteData b
 mapLoaded mapper remoteData =
     case remoteData of
@@ -193,24 +181,24 @@ checkSubmissionResult model result =
 
 
 getRequest : { a | token : String } -> String -> Decoder b -> Task GreaseError b
-getRequest common url decoder =
+getRequest { token } url decoder =
     Http.task
         { method = "GET"
         , url = apiUrl ++ url
         , body = Http.emptyBody
-        , headers = [ Http.header "token" common.token ]
+        , headers = [ Http.header "token" token ]
         , resolver = Http.stringResolver <| parseResponse decoder
         , timeout = timeout
         }
 
 
 postRequestFull : { a | token : String } -> String -> Encode.Value -> Decoder b -> Task GreaseError b
-postRequestFull common url body decoder =
+postRequestFull { token } url body decoder =
     Http.task
         { method = "POST"
         , url = apiUrl ++ url
         , body = Http.jsonBody body
-        , headers = [ Http.header "token" common.token ]
+        , headers = [ Http.header "token" token ]
         , resolver = Http.stringResolver <| parseResponse decoder
         , timeout = timeout
         }
@@ -222,20 +210,15 @@ postRequest common url body =
 
 
 deleteRequest : { a | token : String } -> String -> Task GreaseError ()
-deleteRequest common url =
+deleteRequest { token } url =
     Http.task
         { method = "DELETE"
         , url = apiUrl ++ url
         , body = Http.emptyBody
-        , headers = [ Http.header "token" common.token ]
+        , headers = [ Http.header "token" token ]
         , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
         , timeout = timeout
         }
-
-
-decodeId : Decoder Int
-decodeId =
-    Decode.field "id" Decode.int
 
 
 handleJsonResponse : Decoder a -> Http.Response String -> Result Http.Error a
@@ -262,8 +245,13 @@ handleJsonResponse decoder response =
                     Ok result
 
 
-eventIsOver : Posix -> HasCallAndReleaseTimes a -> Bool
-eventIsOver now { callTime, releaseTime } =
+decodeId : Decoder Int
+decodeId =
+    Decode.field "id" Decode.int
+
+
+eventIsOver : Common -> Event -> Bool
+eventIsOver { now } { callTime, releaseTime } =
     posixToMillis now > posixToMillis (releaseTime |> Maybe.withDefault callTime)
 
 
@@ -316,17 +304,11 @@ permittedTo permission user =
     user.permissions |> List.any (\p -> p.name == permission)
 
 
-showIfPermittedTo : String -> Member -> Html msg -> List (Html msg)
-showIfPermittedTo permission user content =
-    optionalSingleton (permittedTo permission user) content
-
-
 fullName : Member -> String
 fullName member =
     let
         firstName =
             member.preferredName
-                |> Maybe.Extra.filter (\n -> String.length n > 0)
                 |> Maybe.withDefault member.firstName
     in
     firstName ++ " " ++ member.lastName
@@ -341,15 +323,6 @@ isLoadingClass isLoading =
         ""
 
 
-isActiveClass : Bool -> String
-isActiveClass isActive =
-    if isActive then
-        " is-active"
-
-    else
-        ""
-
-
 isPrimaryClass : Bool -> String
 isPrimaryClass isPrimary =
     if isPrimary then
@@ -359,7 +332,22 @@ isPrimaryClass isPrimary =
         ""
 
 
+optionalSingleton : Bool -> Html msg -> List (Html msg)
+optionalSingleton shouldRender content =
+    if shouldRender then
+        [ content ]
 
+    else
+        []
+
+
+
+-- isLoadingClass : Bool -> String
+-- isLoadingClass isLoading =
+--     if isLoading then
+--         " is-loading"
+--     else
+--         ""
 -- PORTS --
 
 

@@ -45,6 +45,7 @@ type EventTab
     | EventSetlist
     | EventCarpools
     | EventRequestAbsence
+    | EventEdit
 
 
 eventTabString : EventTab -> String
@@ -68,6 +69,9 @@ eventTabString tab =
         EventRequestAbsence ->
             "request-absence"
 
+        EventEdit ->
+            "edit"
+
 
 eventTabParser : String -> Maybe EventTab
 eventTabParser tab =
@@ -89,6 +93,9 @@ eventTabParser tab =
 
         "request-absence" ->
             Just EventRequestAbsence
+
+        "edit" ->
+            Just EventEdit
 
         _ ->
             Nothing

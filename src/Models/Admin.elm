@@ -17,7 +17,7 @@ module Models.Admin exposing
 
 import Json.Decode as Decode exposing (Decoder, int, nullable, string)
 import Json.Decode.Pipeline exposing (optional, required)
-import Models.Info exposing (posixDecoder)
+import Models.Info exposing (optionalStringDecoder, posixDecoder)
 import Time exposing (Posix)
 
 
@@ -138,7 +138,7 @@ gigRequestDecoder =
         |> required "contactPhone" string
         |> required "startTime" posixDecoder
         |> required "location" string
-        |> optional "comments" (nullable string) Nothing
+        |> optional "comments" optionalStringDecoder Nothing
         |> required "status" gigRequestStatusDecoder
 
 

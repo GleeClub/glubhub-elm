@@ -11,17 +11,17 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (find)
 import Maybe.Extra exposing (filter, isJust)
-import Models.Event exposing (FullEvent, fullEventDecoder)
+import Models.Event exposing (Event, eventDecoder)
 import Page.Events.Attendance as Attendance
 import Page.Events.Attendees as Attendees
 import Page.Events.Carpools as Carpools
 import Page.Events.Details as Details
+import Page.Events.EditEvent as EditEvent
 import Page.Events.RequestAbsence exposing (requestAbsence)
 import Page.Events.Setlist as Setlist
 import Route exposing (EventRoute, EventTab(..))
 import Task
-import Time exposing (Posix)
-import Utils exposing (Common, RemoteData(..), alert, eventIsOver, getRequest, permittedTo, postRequest, remoteToMaybe)
+import Utils exposing (Common, RemoteData(..), alert, eventIsOver, getRequest, mapLoaded, permittedTo, postRequest)
 
 
 
@@ -30,8 +30,8 @@ import Utils exposing (Common, RemoteData(..), alert, eventIsOver, getRequest, p
 
 type alias Model =
     { common : Common
-    , events : RemoteData (List FullEvent)
-    , selected : RemoteData ( FullEvent, FullEventTab )
+    , events : RemoteData (List Event)
+    , selected : RemoteData ( Event, FullEventTab )
     }
 
 
@@ -42,15 +42,25 @@ type FullEventTab
     | FullEventSetlist Setlist.Model
     | FullEventCarpools Carpools.Model
     | FullEventRequestAbsence String
+    | FullEventEdit EditEvent.Model
 
 
 init : Common -> EventRoute -> ( Model, Cmd Msg )
 init common route =
+    let
+        ( toLoadEvent, selected ) =
+            case route.id of
+                Just eventId ->
+                    ( [ loadEvent common eventId (route.tab |> Maybe.withDefault EventDetails) ], Loading )
+
+                Nothing ->
+                    ( [], NotAsked )
+    in
     ( { common = common
       , events = Loading
-      , selected = NotAsked
+      , selected = selected
       }
-    , loadEvents common route
+    , Cmd.batch <| loadEvents common route :: toLoadEvent
     )
 
 
@@ -59,18 +69,22 @@ init common route =
 
 
 type Msg
-    = OnLoadEvents (GreaseResult ( List FullEvent, EventRoute ))
-    | SelectEvent FullEvent
+    = OnLoadEvents (GreaseResult ( List Event, EventRoute ))
+    | SelectEvent Event
+    | OnLoadEvent (GreaseResult ( Event, EventTab ))
     | UnselectEvent
+    | OnDeleteEvent Int
+    | OnEditEvent Event
     | RequestAbsence
     | UpdateAbsenceRequest String
     | OnRequestAbsence (GreaseResult ())
     | ChangeTab EventTab
-    | DetailsMsg Details.Msg
+    | DetailsMsg Details.InternalMsg
     | SetlistMsg Setlist.Msg
     | CarpoolsMsg Carpools.Msg
     | AttendeesMsg Attendees.Msg
     | AttendanceMsg Attendance.Msg
+    | EditEventMsg EditEvent.InternalMsg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -81,7 +95,7 @@ update msg model =
                 newModel =
                     { model | events = Loaded (List.reverse allEvents) }
             in
-            case route.id |> Maybe.andThen (\id -> allEvents |> List.Extra.find (\e -> e.id == id)) of
+            case route.id |> Maybe.andThen (\id -> allEvents |> find (\e -> e.id == id)) of
                 Just event ->
                     changeTab event (route.tab |> Maybe.withDefault EventDetails) newModel
 
@@ -96,6 +110,12 @@ update msg model =
 
         ( SelectEvent event, _ ) ->
             changeTab event EventDetails model
+
+        ( OnLoadEvent (Ok ( event, tab )), _ ) ->
+            changeTab event tab model
+
+        ( OnLoadEvent (Err error), _ ) ->
+            ( { model | selected = Failure error }, Cmd.none )
 
         ( ChangeTab tab, _ ) ->
             case model.selected of
@@ -131,8 +151,33 @@ update msg model =
         ( OnRequestAbsence (Err _), _ ) ->
             ( model, alert "We messed up submitting your request. Please be gentle..." )
 
+        ( OnDeleteEvent eventId, _ ) ->
+            ( { model
+                | selected = NotAsked
+                , events = model.events |> mapLoaded (List.filter (\e -> e.id /= eventId))
+              }
+            , Cmd.none
+            )
+
+        ( OnEditEvent event, _ ) ->
+            let
+                eventMapper e =
+                    if e.id == event.id then
+                        event
+
+                    else
+                        e
+
+                updatedModel =
+                    { model
+                        | selected = model.selected |> mapLoaded (Tuple.mapFirst (\_ -> event))
+                        , events = model.events |> mapLoaded (List.map eventMapper)
+                    }
+            in
+            changeTab event EventDetails updatedModel
+
         ( DetailsMsg tabMsg, Loaded ( event, FullEventDetails tabModel ) ) ->
-            Details.update tabMsg tabModel |> updateWith event FullEventDetails DetailsMsg model
+            Details.update tabMsg tabModel |> updateWith event FullEventDetails detailsTranslator model
 
         ( DetailsMsg _, _ ) ->
             ( model, Cmd.none )
@@ -167,27 +212,77 @@ update msg model =
         ( UpdateAbsenceRequest _, _ ) ->
             ( model, Cmd.none )
 
+        ( EditEventMsg tabMsg, Loaded ( event, FullEventEdit tabModel ) ) ->
+            EditEvent.update tabMsg tabModel |> updateWith event FullEventEdit editEventTranslator model
 
-tabTitle : EventTab -> String
-tabTitle tab =
-    case tab of
-        EventDetails ->
-            "Details"
+        ( EditEventMsg _, _ ) ->
+            ( model, Cmd.none )
 
-        EventAttendees ->
-            "Who's Attending"
 
-        EventAttendance ->
-            "Attendance"
+detailsTranslator : Details.Translator Msg
+detailsTranslator =
+    Details.translator
+        { onInternalMessage = DetailsMsg
+        , onDeleteEvent = OnDeleteEvent
+        , onEditEvent = OnEditEvent
+        , onSwitchTab = ChangeTab
+        }
 
-        EventSetlist ->
-            "Set List"
 
-        EventCarpools ->
-            "Carpools"
+editEventTranslator : EditEvent.Translator Msg
+editEventTranslator =
+    EditEvent.translator
+        { onInternalMessage = EditEventMsg
+        , onPropagateUpdate = OnEditEvent
+        }
 
-        EventRequestAbsence ->
-            "Request Absence"
+
+changeTab : Event -> EventTab -> Model -> ( Model, Cmd Msg )
+changeTab event tab model =
+    let
+        ( newModel, newCmd ) =
+            case tab of
+                EventDetails ->
+                    Details.init model.common event |> updateWith event FullEventDetails detailsTranslator model
+
+                EventAttendees ->
+                    Attendees.init model.common event.id |> updateWith event FullEventAttendees AttendeesMsg model
+
+                EventAttendance ->
+                    Attendance.init model.common event.id |> updateWith event FullEventAttendance AttendanceMsg model
+
+                EventSetlist ->
+                    Setlist.init model.common event.id |> updateWith event FullEventSetlist SetlistMsg model
+
+                EventCarpools ->
+                    Carpools.init model.common event.id |> updateWith event FullEventCarpools CarpoolsMsg model
+
+                EventRequestAbsence ->
+                    ( { model | selected = Loaded ( event, FullEventRequestAbsence "" ) }, Cmd.none )
+
+                EventEdit ->
+                    EditEvent.init model.common event |> updateWith event FullEventEdit editEventTranslator model
+    in
+    ( newModel
+    , Cmd.batch
+        [ newCmd
+        , Route.replaceUrl model.common.key <|
+            Route.Events { id = Just event.id, tab = Just tab }
+        ]
+    )
+
+
+updateWith :
+    Event
+    -> (tabModel -> FullEventTab)
+    -> (tabMsg -> Msg)
+    -> Model
+    -> ( tabModel, Cmd tabMsg )
+    -> ( Model, Cmd Msg )
+updateWith event toModel toMsg model ( tabModel, subCmd ) =
+    ( { model | selected = Loaded ( event, toModel tabModel ) }
+    , Cmd.map toMsg subCmd
+    )
 
 
 
@@ -207,77 +302,48 @@ submitAbsenceRequest common reason eventId =
         |> Task.attempt OnRequestAbsence
 
 
-changeTab : FullEvent -> EventTab -> Model -> ( Model, Cmd Msg )
-changeTab event tab model =
+loadEvent : Common -> Int -> EventTab -> Cmd Msg
+loadEvent common eventId tab =
     let
-        ( newModel, newCmd ) =
-            case tab of
-                EventDetails ->
-                    Details.init model.common event |> updateWith event FullEventDetails DetailsMsg model
+        url =
+            "/events/" ++ String.fromInt eventId
 
-                EventAttendees ->
-                    Attendees.init model.common event.id |> updateWith event FullEventAttendees AttendeesMsg model
-
-                EventAttendance ->
-                    Attendance.init model.common event.id |> updateWith event FullEventAttendance AttendanceMsg model
-
-                EventSetlist ->
-                    Setlist.init model.common event.id |> updateWith event FullEventSetlist SetlistMsg model
-
-                EventCarpools ->
-                    Carpools.init model.common event.id |> updateWith event FullEventCarpools CarpoolsMsg model
-
-                EventRequestAbsence ->
-                    ( { model | selected = Loaded ( event, FullEventRequestAbsence "" ) }, Cmd.none )
+        decoder =
+            Decode.map2 Tuple.pair
+                eventDecoder
+                (Decode.succeed tab)
     in
-    ( newModel
-    , Cmd.batch
-        [ newCmd
-        , Route.replaceUrl model.common.key <|
-            Route.Events { id = Just event.id, tab = Just tab }
-        ]
-    )
-
-
-updateWith :
-    FullEvent
-    -> (tabModel -> FullEventTab)
-    -> (tabMsg -> Msg)
-    -> Model
-    -> ( tabModel, Cmd tabMsg )
-    -> ( Model, Cmd Msg )
-updateWith event toModel toMsg model ( tabModel, subCmd ) =
-    ( { model | selected = Loaded ( event, toModel tabModel ) }
-    , Cmd.map toMsg subCmd
-    )
+    getRequest common url decoder
+        |> Task.attempt OnLoadEvent
 
 
 loadEvents : Common -> EventRoute -> Cmd Msg
 loadEvents common route =
-    getRequest common
-        "/events?full=true"
-        (Decode.map2 Tuple.pair
-            (Decode.list <| fullEventDecoder)
-            (Decode.succeed route)
-        )
+    let
+        decoder =
+            Decode.map2 Tuple.pair
+                (Decode.list <| eventDecoder)
+                (Decode.succeed route)
+    in
+    getRequest common "/events?attendance=true" decoder
         |> Task.attempt OnLoadEvents
 
 
 type alias EventGroups =
-    { volunteer : List FullEvent
-    , rehearsal : List FullEvent
-    , tutti : List FullEvent
-    , ombuds : List FullEvent
+    { volunteer : List Event
+    , rehearsal : List Event
+    , tutti : List Event
+    , ombuds : List Event
     }
 
 
-organizeEvents : Posix -> List FullEvent -> ( EventGroups, EventGroups )
-organizeEvents now events =
+organizeEvents : Common -> List Event -> ( EventGroups, EventGroups )
+organizeEvents common events =
     let
         ( pastEvents, upcomingEvents ) =
             events
                 |> List.reverse
-                |> List.partition (\e -> e |> eventIsOver now)
+                |> List.partition (\e -> e |> eventIsOver common)
 
         -- TODO: make less fallible somehow?
         groupEvents eventList =
@@ -311,8 +377,36 @@ tabIsActive currentTab tab =
         ( FullEventRequestAbsence _, EventRequestAbsence ) ->
             True
 
+        ( FullEventEdit _, EventEdit ) ->
+            True
+
         ( _, _ ) ->
             False
+
+
+tabTitle : EventTab -> String
+tabTitle tab =
+    case tab of
+        EventDetails ->
+            "Details"
+
+        EventAttendees ->
+            "Who's Attending"
+
+        EventAttendance ->
+            "Attendance"
+
+        EventSetlist ->
+            "Set List"
+
+        EventCarpools ->
+            "Carpools"
+
+        EventRequestAbsence ->
+            "Request Absence"
+
+        EventEdit ->
+            "Edit"
 
 
 
@@ -330,7 +424,7 @@ view model =
         ]
 
 
-eventSidebar : Common -> RemoteData ( FullEvent, FullEventTab ) -> Html Msg
+eventSidebar : Common -> RemoteData ( Event, FullEventTab ) -> Html Msg
 eventSidebar common eventAndTab =
     Basics.sidebar
         { data = eventAndTab
@@ -341,7 +435,7 @@ eventSidebar common eventAndTab =
         }
 
 
-tabContent : Common -> ( FullEvent, FullEventTab ) -> List (Html Msg)
+tabContent : Common -> ( Event, FullEventTab ) -> List (Html Msg)
 tabContent common ( event, eventTab ) =
     let
         header =
@@ -352,7 +446,7 @@ tabContent common ( event, eventTab ) =
     in
     case eventTab of
         FullEventDetails tab ->
-            header ++ [ Details.view tab |> Html.map DetailsMsg, absenceRequestButton common event ]
+            header ++ [ Details.view tab |> Html.map detailsTranslator ]
 
         FullEventAttendees tab ->
             header ++ [ Attendees.view tab |> Html.map AttendeesMsg ]
@@ -376,12 +470,17 @@ tabContent common ( event, eventTab ) =
                 }
             ]
 
+        FullEventEdit tab ->
+            [ Basics.backTextButton "cancel editing" (ChangeTab EventDetails)
+            , EditEvent.view tab |> Html.map editEventTranslator
+            ]
 
-pastAndFutureEventColumns : Model -> List FullEvent -> Html Msg
+
+pastAndFutureEventColumns : Model -> List Event -> Html Msg
 pastAndFutureEventColumns model events =
     let
         ( pastEvents, upcomingEvents ) =
-            organizeEvents model.common.now events
+            events |> organizeEvents model.common
     in
     div []
         [ eventColumns model upcomingEvents
@@ -400,14 +499,16 @@ eventColumns model eventGroups =
         ]
 
 
-eventColumn : Model -> String -> List FullEvent -> Html Msg
+eventColumn : Model -> String -> List Event -> Html Msg
 eventColumn model name events =
     let
         isSelected event =
-            model.selected
-                |> remoteToMaybe
-                |> Maybe.map (\( selected, _ ) -> selected.id == event.id)
-                |> Maybe.withDefault False
+            case model.selected of
+                Loaded ( selected, _ ) ->
+                    selected.id == event.id
+
+                _ ->
+                    False
     in
     div [ class "column is-one-quarter is-centered" ]
         [ Basics.title name
@@ -421,10 +522,10 @@ eventColumn model name events =
         ]
 
 
-eventRow : Model -> FullEvent -> List (Html Msg)
+eventRow : Model -> Event -> List (Html Msg)
 eventRow model event =
     [ td [ style "text-align" "center" ]
-        [ Basics.attendanceIcon model.common event event.attendance ]
+        [ Basics.attendanceIcon model.common event ]
     , td [] [ text <| simpleDateFormatter model.common.timeZone event.callTime ]
     , td [] [ text event.name ]
     ]
@@ -443,7 +544,7 @@ pageLink currentTab tab =
         [ a [ onClick <| ChangeTab tab ] [ text <| tabTitle tab ] ]
 
 
-eventTabs : Common -> FullEvent -> FullEventTab -> Html Msg
+eventTabs : Common -> Event -> FullEventTab -> Html Msg
 eventTabs common event currentTab =
     let
         isGig =
@@ -476,16 +577,3 @@ eventTabs common event currentTab =
     in
     div [ class "tabs" ]
         [ ul [] (allTabs |> List.map (pageLink currentTab)) ]
-
-
-absenceRequestButton : Common -> FullEvent -> Html Msg
-absenceRequestButton common event =
-    if not (event |> eventIsOver common.now) && isJust event.rsvpIssue then
-        a
-            [ class "button is-primary is-outlined"
-            , onClick (ChangeTab EventRequestAbsence)
-            ]
-            [ text "Request Absence" ]
-
-    else
-        text ""

@@ -2,7 +2,7 @@ module Models.Document exposing (Announcement, MeetingMinutes, announcementDecod
 
 import Json.Decode as Decode exposing (Decoder, bool, int, nullable, string)
 import Json.Decode.Pipeline exposing (optional, required)
-import Models.Info exposing (posixDecoder)
+import Models.Info exposing (optionalStringDecoder, posixDecoder)
 import Time exposing (Posix)
 
 
@@ -21,8 +21,8 @@ meetingMinutesDecoder =
         |> required "id" int
         |> required "name" string
         |> required "date" posixDecoder
-        |> optional "public" (nullable string) Nothing
-        |> optional "private" (nullable string) Nothing
+        |> optional "public" optionalStringDecoder Nothing
+        |> optional "private" optionalStringDecoder Nothing
 
 
 type alias Announcement =

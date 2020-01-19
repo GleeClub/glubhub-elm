@@ -1,12 +1,12 @@
 module Page.Repertoire.EditSong exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, fileInput, selectInput, textInput, textareaInput)
+import Components.Forms exposing (checkboxInput, fileInput, selectInput, textInput, textInputWithPrefix, textareaInput)
 import Error exposing (GreaseError, GreaseResult)
 import File exposing (File)
 import Html exposing (Html, br, button, div, form, h2, h3, li, text, ul)
 import Html.Attributes exposing (class, name, style, type_)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Events exposing (onSubmit)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List
@@ -486,12 +486,11 @@ view model =
             ( str, str )
 
         parsePitch pitch =
-            Decode.decodeString (pitchDecoder pitch) ""
-                |> Result.toMaybe
-                |> Maybe.andThen identity
+            Decode.decodeString pitchDecoder ("\"" ++ pitch ++ "\"")
+                |> Result.withDefault Nothing
 
         parseSongMode songMode =
-            Decode.decodeString songModeDecoder songMode
+            Decode.decodeString songModeDecoder ("\"" ++ songMode ++ "\"")
                 |> Result.toMaybe
 
         pitchIsSelected currentPitch givenPitch =
@@ -565,8 +564,15 @@ view model =
             , onInput = \info -> ForSelf <| UpdateSong { song | info = Just info }
             }
         , ul [ style "list-style" "none", style "padding-bottom" "10px" ]
-            (editSheetMusic model
+            ((editSheetMusic model
                 |> List.map (\x -> li [] [ x ])
+             )
+                ++ (editMidis model
+                        |> List.map (\x -> li [] [ x ])
+                   )
+                ++ (editPerformances model
+                        |> List.map (\x -> li [] [ x ])
+                   )
             )
         , Basics.submissionStateBox model.state
         ]
@@ -616,20 +622,92 @@ editSheetMusic model =
     header :: deletableLinks ++ [ br [] [], newSongLink ]
 
 
+editMidis : Model -> List (Html Msg)
+editMidis model =
+    let
+        newLinks =
+            model.newLinks
 
--- view : Model -> Html Msg
--- view _ =
---     div []
---         [ Basics.title "Webmaster Tools"
---         , Basics.box
---             [ p [] [ text "Upload a file here:" ]
---             , p []
---                 [ input
---                     [ type_ "file"
---                     , on "change" (Decode.map SelectApiBinary filesDecoder)
---                     ]
---                     []
---                 ]
---             , button [ class "button", onClick UploadApi ] [ text "Send it!" ]
---             ]
---         ]
+        midi =
+            newLinks.midi
+
+        header =
+            Basics.divider "MIDI's"
+
+        deletableLinks =
+            model.song.links
+                |> List.find (\section -> section.name == "MIDIs")
+                |> Maybe.map .links
+                |> Maybe.withDefault []
+                |> List.map (songLinkButtonWithDelete (\id -> ForSelf <| DeleteSongLink id))
+                |> List.intersperse (br [] [])
+
+        newSongLink =
+            form [ onSubmit <| ForSelf AddMidi ]
+                [ textInput
+                    { title = "MIDI name"
+                    , helpText = Nothing
+                    , value = midi.name
+                    , placeholder = "Happy Birthday - B1"
+                    , required = True
+                    , onInput = \name -> ForSelf <| UpdateNewLinks { newLinks | midi = { midi | name = name } }
+                    }
+                , fileInput
+                    { title = "MIDI file"
+                    , helpText = Nothing
+                    , file = midi.file
+                    , selectFile = ForSelf << SelectMidiFile
+                    }
+                , button
+                    [ class "button", type_ "submit" ]
+                    [ text "Add MIDI" ]
+                ]
+    in
+    header :: deletableLinks ++ [ br [] [], newSongLink ]
+
+
+editPerformances : Model -> List (Html Msg)
+editPerformances model =
+    let
+        newLinks =
+            model.newLinks
+
+        performance =
+            newLinks.performance
+
+        header =
+            Basics.divider "Performances"
+
+        deletableLinks =
+            model.song.links
+                |> List.find (\section -> section.name == "Performances")
+                |> Maybe.map .links
+                |> Maybe.withDefault []
+                |> List.map (songLinkButtonWithDelete (\id -> ForSelf <| DeleteSongLink id))
+                |> List.intersperse (br [] [])
+
+        newSongLink =
+            form [ onSubmit <| ForSelf AddPerformance ]
+                [ textInput
+                    { title = "Performance name"
+                    , helpText = Nothing
+                    , value = performance.name
+                    , placeholder = "Happy Birthday, live from New York!"
+                    , required = True
+                    , onInput = \name -> ForSelf <| UpdateNewLinks { newLinks | performance = { performance | name = name } }
+                    }
+                , textInputWithPrefix
+                    { title = "Performance URL"
+                    , prefix = "https://youtu.be/"
+                    , helpText = Nothing
+                    , value = performance.url
+                    , placeholder = "dtER80sOjX4"
+                    , required = True
+                    , onInput = \url -> ForSelf <| UpdateNewLinks { newLinks | performance = { performance | url = url } }
+                    }
+                , button
+                    [ class "button", type_ "submit" ]
+                    [ text "Add performance" ]
+                ]
+    in
+    header :: deletableLinks ++ [ br [] [], newSongLink ]

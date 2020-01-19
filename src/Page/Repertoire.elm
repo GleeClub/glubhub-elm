@@ -5,14 +5,29 @@ import Components.SelectableList exposing (selectableListFull)
 import Error exposing (GreaseResult)
 import Html exposing (Html, a, div, p, section, td, text)
 import Html.Attributes exposing (class, id, style)
+import Html.Events exposing (onClick)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Models.Song exposing (Pitch, Song, halfStepsAboveA, songDecoder)
 import Page.Repertoire.EditSong as EditSong
 import Page.Repertoire.SongSidebar exposing (songSidebar)
 import Permissions
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), getRequest, mapLoaded, playPitch, remoteToMaybe, resultToRemote, scrollToElement)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , decodeId
+        , getRequest
+        , mapLoaded
+        , playPitch
+        , postRequestFull
+        , remoteToMaybe
+        , resultToRemote
+        , scrollToElement
+        )
 
 
 
@@ -23,6 +38,7 @@ type alias Model =
     { common : Common
     , songs : RemoteData (List Song)
     , selected : RemoteData ( Song, Maybe EditSong.Model )
+    , createSongState : SubmissionState
     }
 
 
@@ -37,7 +53,11 @@ init common maybeSongId =
                 Nothing ->
                     ( [], NotAsked )
     in
-    ( { common = common, songs = Loading, selected = selected }
+    ( { common = common
+      , songs = Loading
+      , selected = selected
+      , createSongState = NotSentYet
+      }
     , Cmd.batch <| loadSongs common :: toLoadSong
     )
 
@@ -61,6 +81,8 @@ type Msg
     | PropagateUpdateSong Song
     | UnselectSong
     | PlayPitch Pitch
+    | CreateSong
+    | OnCreateSong (GreaseResult Song)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -148,6 +170,21 @@ update msg model =
         PlayPitch pitch ->
             ( model, playPitch (halfStepsAboveA pitch) )
 
+        CreateSong ->
+            ( { model | createSongState = Sending }, createSong model.common )
+
+        OnCreateSong (Ok song) ->
+            ( { model
+                | createSongState = NotSentYet
+                , songs = model.songs |> mapLoaded ((::) song)
+                , selected = Loaded ( song, Just <| EditSong.init model.common song )
+              }
+            , Cmd.none
+            )
+
+        OnCreateSong (Err error) ->
+            ( { model | createSongState = ErrorSending error }, Cmd.none )
+
 
 editSongTranslator : EditSong.Translator Msg
 editSongTranslator =
@@ -175,6 +212,28 @@ loadSong common songId =
     in
     getRequest common url songDecoder
         |> Task.attempt OnLoadSong
+
+
+createSong : Common -> Cmd Msg
+createSong common =
+    let
+        body =
+            Encode.object
+                [ ( "title", Encode.string "New Song" )
+                ]
+
+        songCreator =
+            Utils.postRequestFull common "/repertoire" body Utils.decodeId
+
+        songUrl id =
+            "/repertoire/" ++ String.fromInt id
+
+        songLoader id =
+            getRequest common (songUrl id) songDecoder
+    in
+    songCreator
+        |> Task.andThen songLoader
+        |> Task.attempt OnCreateSong
 
 
 
@@ -205,10 +264,10 @@ view model =
             [ class "section" ]
             [ div [ class "container" ]
                 [ div [ class "columns" ]
-                    [ songList model "Current" True currentSongsFilter
-                    , songList model "A-G" False otherAToGFilter
-                    , songList model "H-P" False otherHToPFilter
-                    , songList model "Q-Z" False otherQToZFilter
+                    [ songList model "Current" (Just model.createSongState) currentSongsFilter
+                    , songList model "A-G" Nothing otherAToGFilter
+                    , songList model "H-P" Nothing otherHToPFilter
+                    , songList model "Q-Z" Nothing otherQToZFilter
                     ]
                 ]
             ]
@@ -236,8 +295,8 @@ view model =
         ]
 
 
-songList : Model -> String -> Bool -> (Song -> Bool) -> Html Msg
-songList model title showNewSongButton filter =
+songList : Model -> String -> Maybe SubmissionState -> (Song -> Bool) -> Html Msg
+songList model title createSongState filter =
     div [ class "column is-one-quarter is-centered" ]
         [ Basics.title title
         , selectableListFull
@@ -253,19 +312,31 @@ songList model title showNewSongButton filter =
                         |> Maybe.withDefault False
             , contentAtTop = text ""
             , contentAtBottom =
-                if showNewSongButton then
-                    Basics.renderIfHasPermission model.common Permissions.editRepertoire <|
-                        div
-                            [ class "field is-grouped is-grouped-centered"
-                            , style "padding-top" "5px"
-                            ]
-                            [ p [ class "control" ]
-                                [ a [ class "button is-primary" ]
-                                    [ text "+ Add New Song" ]
-                                ]
-                            ]
+                case createSongState of
+                    Just createState ->
+                        Basics.renderIfHasPermission model.common Permissions.editRepertoire <|
+                            div []
+                                [ div
+                                    [ class "field is-grouped is-grouped-centered"
+                                    , style "padding-top" "5px"
+                                    ]
+                                    [ p [ class "control" ]
+                                        [ a
+                                            [ class <| "button is-primary" ++ Utils.isLoadingClass (createState == Sending)
+                                            , onClick CreateSong
+                                            ]
+                                            [ text "+ Add New Song" ]
+                                        ]
+                                    ]
+                                , case createState of
+                                    ErrorSending error ->
+                                        Basics.errorBox error
 
-                else
-                    text ""
+                                    _ ->
+                                        text ""
+                                ]
+
+                    Nothing ->
+                        text ""
             }
         ]

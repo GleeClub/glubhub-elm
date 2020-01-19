@@ -1,7 +1,6 @@
 module Components.ConfirmAccount exposing (Model, Msg, confirmAccountHeader, init, update, view)
 
 import Browser.Navigation as Nav
-import Components.Basics as Basics
 import Error exposing (GreaseResult)
 import Html exposing (Html, a, button, div, form, h4, input, label, option, p, section, select, span, text)
 import Html.Attributes exposing (class, name, placeholder, selected, style, type_, value)

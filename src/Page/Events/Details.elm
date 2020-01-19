@@ -1,17 +1,22 @@
-module Page.Events.Details exposing (Model, Msg(..), init, update, view)
+module Page.Events.Details exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
 import Components.Basics as Basics
+import Components.DeleteModal exposing (deleteModal)
 import Datetime exposing (fullDateTimeFormatter, timeFormatter)
-import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, i, p, span, text)
-import Html.Attributes exposing (attribute, class, href, style)
+import Error exposing (GreaseError, GreaseResult)
+import Html exposing (Html, a, b, br, button, div, i, p, span, text, u)
+import Html.Attributes exposing (attribute, class, href, style, target)
 import Html.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Models.Event exposing (FullEvent, FullEventAttendance)
+import List.Extra exposing (find)
+import Maybe.Extra exposing (isJust, isNothing)
+import Models.Event exposing (Event, Gig, SimpleAttendance)
 import Models.Info exposing (Uniform)
+import Models.Permissions as Permissions
+import Route exposing (EventTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, postRequestFull)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, postRequestFull)
 
 
 
@@ -20,15 +25,24 @@ import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver,
 
 type alias Model =
     { common : Common
-    , event : FullEvent
+    , event : Event
+    , deleteState : DeleteState
     , state : SubmissionState
     }
 
 
-init : Common -> FullEvent -> ( Model, Cmd Msg )
+type DeleteState
+    = NotDeleting
+    | TryingToDelete
+    | CurrentlyDeleting
+    | CouldNotDelete GreaseError
+
+
+init : Common -> Event -> ( Model, Cmd Msg )
 init common event =
     ( { common = common
       , event = event
+      , deleteState = NotDeleting
       , state = NotSentYet
       }
     , Cmd.none
@@ -40,11 +54,54 @@ init common event =
 
 
 type Msg
+    = ForSelf InternalMsg
+    | ForParent OutMsg
+
+
+type InternalMsg
     = Rsvp Bool
     | OnRsvp (GreaseResult Bool)
+    | TryToDeleteEvent
+    | CancelDeleteEvent
+    | SendDeleteEvent
+    | OnDeleteEvent (GreaseResult ())
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+type OutMsg
+    = DeleteEvent Int
+    | EditEvent Event
+    | SwitchTab EventTab
+
+
+type alias TranslationDictionary msg =
+    { onInternalMessage : InternalMsg -> msg
+    , onDeleteEvent : Int -> msg
+    , onEditEvent : Event -> msg
+    , onSwitchTab : EventTab -> msg
+    }
+
+
+type alias Translator msg =
+    Msg -> msg
+
+
+translator : TranslationDictionary msg -> Translator msg
+translator dictionary msg =
+    case msg of
+        ForSelf internal ->
+            dictionary.onInternalMessage internal
+
+        ForParent (DeleteEvent eventId) ->
+            dictionary.onDeleteEvent eventId
+
+        ForParent (EditEvent event) ->
+            dictionary.onEditEvent event
+
+        ForParent (SwitchTab tab) ->
+            dictionary.onSwitchTab tab
+
+
+update : InternalMsg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Rsvp attending ->
@@ -62,7 +119,24 @@ update msg model =
                     model.event.attendance
                         |> Maybe.map (\a -> { a | confirmed = True, shouldAttend = attending })
             in
-            ( { model | state = NotSentYet, event = { event | attendance = attendance } }, Cmd.none )
+            ( { model | state = NotSentYet, event = { event | attendance = attendance } }
+            , Task.perform (\_ -> ForParent <| EditEvent { event | attendance = attendance }) (Task.succeed ())
+            )
+
+        TryToDeleteEvent ->
+            ( { model | deleteState = TryingToDelete }, Cmd.none )
+
+        CancelDeleteEvent ->
+            ( { model | deleteState = NotDeleting }, Cmd.none )
+
+        SendDeleteEvent ->
+            ( { model | deleteState = CurrentlyDeleting }, deleteEvent model.common model.event.id )
+
+        OnDeleteEvent (Ok _) ->
+            ( model, Task.perform (\_ -> ForParent <| DeleteEvent model.event.id) (Task.succeed ()) )
+
+        OnDeleteEvent (Err error) ->
+            ( { model | deleteState = CouldNotDelete error }, Cmd.none )
 
 
 
@@ -87,7 +161,17 @@ rsvp common eventId attending =
             Encode.object []
     in
     Utils.postRequestFull common url emptyBody (Decode.succeed attending)
-        |> Task.attempt OnRsvp
+        |> Task.attempt (ForSelf << OnRsvp)
+
+
+deleteEvent : Common -> Int -> Cmd Msg
+deleteEvent common eventId =
+    let
+        url =
+            "/events/" ++ String.fromInt eventId
+    in
+    deleteRequest common url
+        |> Task.attempt (ForSelf << OnDeleteEvent)
 
 
 
@@ -132,7 +216,10 @@ view model =
                     )
             , model.event.gig
                 |> Maybe.map .uniform
+                |> Maybe.andThen (\id -> model.common.info.uniforms |> find (\uniform -> uniform.id == id))
                 |> maybeToList uniformSection
+            , [ absenceRequestButton model.common model.event ]
+            , [ officerInfoSection model ]
             , [ case model.state of
                     ErrorSending error ->
                         Basics.errorBox error
@@ -143,13 +230,22 @@ view model =
             ]
 
 
-subtitleAndLocation : Common -> FullEvent -> Html Msg
+subtitleAndLocation : Common -> Event -> Html Msg
 subtitleAndLocation common event =
     p [ class "subtitle is-5" ] <|
         [ text (event.callTime |> fullDateTimeFormatter common.timeZone)
         , br [] []
+        , case event.location of
+            Just location ->
+                a
+                    [ href <| "https://www.google.com/maps/search/" ++ location
+                    , target "_blank"
+                    ]
+                    [ text location ]
+
+            Nothing ->
+                text ""
         ]
-            ++ (event.location |> maybeToList text)
 
 
 maybeToList : (a -> b) -> Maybe a -> List b
@@ -164,22 +260,22 @@ rsvpIssueSection issue =
 
 attendanceBlock : Model -> Html Msg
 attendanceBlock model =
-    case ( model.event.attendance, model.event.rsvpIssue, eventIsOver model.common.now model.event ) of
-        ( Just eventAttendance, _, True ) ->
-            span [] <| attendanceSummary model.event.points eventAttendance
+    case ( model.event.attendance, model.event.rsvpIssue, model.event |> eventIsOver model.common ) of
+        ( Just attendance, _, True ) ->
+            span [] <| attendanceSummary model.event.points attendance
 
         ( _, Just issue, False ) ->
             span [] <| [ rsvpIssueSection issue ]
 
-        ( Just eventAttendance, Nothing, False ) ->
-            span [] <| (eventAttendance |> rsvpActions (model.state == Sending))
+        ( Just attendance, Nothing, False ) ->
+            span [] <| (attendance |> rsvpActions (model.state == Sending))
 
         ( Nothing, _, _ ) ->
             span [] []
 
 
-rsvpActions : Bool -> FullEventAttendance -> List (Html Msg)
-rsvpActions isSending eventAttendance =
+rsvpActions : Bool -> SimpleAttendance -> List (Html Msg)
+rsvpActions isSending attendance =
     let
         rsvpButton attending content =
             button
@@ -192,11 +288,11 @@ rsvpActions isSending eventAttendance =
                                 ""
                            )
                         ++ Utils.isLoadingClass isSending
-                , onClick <| Rsvp attending
+                , onClick <| ForSelf <| Rsvp attending
                 ]
                 [ text content ]
     in
-    case ( eventAttendance.confirmed, eventAttendance.shouldAttend ) of
+    case ( attendance.confirmed, attendance.shouldAttend ) of
         ( True, True ) ->
             [ p []
                 [ text "You're "
@@ -227,9 +323,9 @@ rsvpActions isSending eventAttendance =
             ]
 
 
-attendanceSummary : Int -> FullEventAttendance -> List (Html Msg)
-attendanceSummary eventPoints eventAttendance =
-    case ( eventAttendance.didAttend, eventAttendance.shouldAttend ) of
+attendanceSummary : Int -> SimpleAttendance -> List (Html Msg)
+attendanceSummary eventPoints attendance =
+    case ( attendance.didAttend, attendance.shouldAttend ) of
         ( True, True ) ->
             [ text "You were there! What a great time. Real #tbt material." ]
 
@@ -242,7 +338,7 @@ attendanceSummary eventPoints eventAttendance =
             , text ", and that's "
             , b [] [ text "not ok" ]
             , text ". You lost "
-            , text <| String.fromFloat <| abs (eventAttendance.gradeChange |> Maybe.withDefault (eventPoints |> toFloat))
+            , text <| String.fromInt eventPoints
             , text " points. "
             , a [ href "mailto:gleeclub_officers@lists.gatech.edu?subject=Attendance%20Issue" ]
                 [ text "Email the officers" ]
@@ -270,3 +366,104 @@ uniformSection uniform =
             [ i [ class "far fa-question-circle" ] [] ]
         , br [] []
         ]
+
+
+absenceRequestButton : Common -> Event -> Html Msg
+absenceRequestButton common event =
+    if not (event |> eventIsOver common) && isJust event.rsvpIssue then
+        a
+            [ class "button is-primary is-outlined"
+            , onClick <| ForParent <| SwitchTab EventDetails
+            ]
+            [ text "Request Absence" ]
+
+    else
+        text ""
+
+
+officerInfoSection : Model -> Html Msg
+officerInfoSection model =
+    Basics.renderIfHasPermission model.common Permissions.viewEventPrivateDetails <|
+        div []
+            [ Basics.divider ""
+            , model.event.gig
+                |> Maybe.map contactInfo
+                |> Maybe.withDefault (text "")
+            , model.event.gig
+                |> Maybe.map priceInfo
+                |> Maybe.withDefault (text "")
+            , br [] []
+            , button
+                [ class "button"
+                , style "margin-bottom" "5px"
+                , onClick (ForParent <| SwitchTab EventEdit)
+                ]
+                [ text "Edit this bitch" ]
+            , br [] []
+            , button
+                [ class "button is-danger"
+                , onClick (ForSelf TryToDeleteEvent)
+                ]
+                [ text "Baleet this bitch" ]
+            , if model.deleteState == NotDeleting then
+                text ""
+
+              else
+                deleteModal
+                    { title = "Delete " ++ model.event.name ++ "?"
+                    , cancel = ForSelf CancelDeleteEvent
+                    , confirm = ForSelf SendDeleteEvent
+                    , content =
+                        p []
+                            [ text "Are you sure you want to delete this event? "
+                            , text "Once you delete it, it's gone like Donkey Kong."
+                            ]
+                    , state =
+                        case model.deleteState of
+                            TryingToDelete ->
+                                NotSentYet
+
+                            CouldNotDelete error ->
+                                ErrorSending error
+
+                            _ ->
+                                Sending
+                    }
+            ]
+
+
+contactInfo : Gig -> Html Msg
+contactInfo gig =
+    if
+        isNothing gig.contactName
+            && isNothing gig.contactEmail
+            && isNothing gig.contactPhone
+    then
+        p [] [ i [] [ text "No contact info" ] ]
+
+    else
+        p []
+            [ u [] [ text "Contact" ]
+            , br [] []
+            , gig.contactName
+                |> Maybe.map text
+                |> Maybe.withDefault (i [] [ text "idk who" ])
+            , br [] []
+            , gig.contactPhone
+                |> Maybe.map Basics.phoneLink
+                |> Maybe.withDefault (i [] [ text "no number, bro" ])
+            , br [] []
+            , gig.contactEmail
+                |> Maybe.map Basics.emailLink
+                |> Maybe.withDefault (i [] [ text "no email, dude" ])
+            ]
+
+
+priceInfo : Gig -> Html Msg
+priceInfo gig =
+    case gig.price of
+        Just price ->
+            p [] [ text <| "$" ++ String.fromInt price ]
+
+        Nothing ->
+            text ""

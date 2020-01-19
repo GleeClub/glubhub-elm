@@ -20,6 +20,7 @@ import Page.ForgotPassword
 import Page.Home
 import Page.Login
 import Page.Minutes
+import Page.NotFound
 import Page.Profile
 import Page.Repertoire
 import Page.ResetPassword
@@ -35,7 +36,7 @@ type alias Model =
     { common : RemoteData Common
     , navKey : Key
     , route : Maybe Route
-    , page : Page
+    , page : Maybe Page
     , burgerOpened : Bool
     , ignoredConfirmPrompt : Bool
     , confirmAccountModal : Maybe ConfirmAccount.Model
@@ -43,7 +44,7 @@ type alias Model =
 
 
 type Page
-    = PageNone
+    = PageNotFound Common
     | PageHome Page.Home.Model
     | PageLogin Page.Login.Model
     | PageRoster Page.Roster.Model
@@ -92,13 +93,15 @@ init apiTokenJson url navKey =
             { common = Loading
             , navKey = navKey
             , route = Just Route.Login
-            , page = PageNone
+            , page = Nothing
             , burgerOpened = False
             , ignoredConfirmPrompt = False
             , confirmAccountModal = Nothing
             }
     in
-    ( { model | route = Route.fromUrl url }, loadCommon token navKey )
+    ( { model | route = Route.fromUrl url }
+    , loadCommon token navKey
+    )
 
 
 loadCommon : String -> Nav.Key -> Cmd Msg
@@ -160,7 +163,7 @@ loadCurrentPage model =
                             ( pageModel, pageCmd ) =
                                 pageInit
                         in
-                        ( { model | page = page pageModel }
+                        ( { model | page = Just <| page pageModel }
                         , Cmd.batch
                             [ Cmd.map msg pageCmd
                             , Route.replaceUrl common.key route
@@ -168,16 +171,16 @@ loadCurrentPage model =
                         )
                 in
                 case ( model.route, model.page ) of
-                    ( Just Route.EditProfile, PageEditProfile _ ) ->
+                    ( Just Route.EditProfile, Just (PageEditProfile _) ) ->
                         ( model, Cmd.none )
 
-                    ( Just Route.Login, PageLogin _ ) ->
+                    ( Just Route.Login, Just (PageLogin _) ) ->
                         ( model, Cmd.none )
 
-                    ( Just Route.ForgotPassword, PageForgotPassword _ ) ->
+                    ( Just Route.ForgotPassword, Just (PageForgotPassword _) ) ->
                         ( model, Cmd.none )
 
-                    ( Just (Route.ResetPassword _), PageResetPassword _ ) ->
+                    ( Just (Route.ResetPassword _), Just (PageResetPassword _) ) ->
                         ( model, Cmd.none )
 
                     ( Just Route.EditProfile, _ ) ->
@@ -197,67 +200,67 @@ loadCurrentPage model =
                     ( Just Route.Login, _ ) ->
                         ( model, Route.replaceUrl common.key Route.Home )
 
-                    ( Just Route.ForgotPassword, PageForgotPassword _ ) ->
+                    ( Just Route.ForgotPassword, Just (PageForgotPassword _) ) ->
                         ( model, Cmd.none )
 
                     ( Just Route.ForgotPassword, _ ) ->
                         Page.ForgotPassword.init |> updateWith PageForgotPassword ForgotPasswordMsg model
 
-                    ( Just (Route.ResetPassword _), PageResetPassword _ ) ->
+                    ( Just (Route.ResetPassword _), Just (PageResetPassword _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.ResetPassword token), _ ) ->
                         Page.ResetPassword.init token |> updateWith PageResetPassword ResetPasswordMsg model
 
-                    ( Just Route.Home, PageHome _ ) ->
+                    ( Just Route.Home, Just (PageHome _) ) ->
                         ( model, Cmd.none )
 
                     ( Just Route.Home, _ ) ->
                         Page.Home.init common |> updateWith PageHome HomeMsg model
 
-                    ( Just Route.Roster, PageRoster _ ) ->
+                    ( Just Route.Roster, Just (PageRoster _) ) ->
                         ( model, Cmd.none )
 
                     ( Just Route.Roster, _ ) ->
                         Page.Roster.init common |> updateWith PageRoster RosterMsg model
 
-                    ( Just (Route.Profile _), PageProfile _ ) ->
+                    ( Just (Route.Profile _), Just (PageProfile _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.Profile email), _ ) ->
                         Page.Profile.init common email |> updateWith PageProfile ProfileMsg model
 
-                    ( Just Route.EditProfile, PageEditProfile _ ) ->
+                    ( Just Route.EditProfile, Just (PageEditProfile _) ) ->
                         ( model, Cmd.none )
 
                     ( Just Route.EditProfile, _ ) ->
                         Page.EditProfile.init common |> updateWith PageEditProfile EditProfileMsg model
 
-                    ( Just (Route.Events _), PageEvents _ ) ->
+                    ( Just (Route.Events _), Just (PageEvents _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.Events route), _ ) ->
                         Page.Events.init common route |> updateWith PageEvents EventsMsg model
 
-                    ( Just (Route.EditCarpools _), PageEditCarpools _ ) ->
+                    ( Just (Route.EditCarpools _), Just (PageEditCarpools _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.EditCarpools route), _ ) ->
                         EditCarpools.init common route |> updateWith PageEditCarpools EditCarpoolsMsg model
 
-                    ( Just (Route.Repertoire _), PageRepertoire _ ) ->
+                    ( Just (Route.Repertoire _), Just (PageRepertoire _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.Repertoire songId), _ ) ->
                         Page.Repertoire.init common songId |> updateWith PageRepertoire RepertoireMsg model
 
-                    ( Just (Route.Minutes _), PageMinutes _ ) ->
+                    ( Just (Route.Minutes _), Just (PageMinutes _) ) ->
                         ( model, Cmd.none )
 
                     ( Just (Route.Minutes route), _ ) ->
                         Page.Minutes.init common route |> updateWith PageMinutes MinutesMsg model
 
-                    ( Just (Route.Admin tab), PageAdmin pageModel ) ->
+                    ( Just (Route.Admin tab), Just (PageAdmin pageModel) ) ->
                         -- Only load the new tab if it isn't currently open
                         if tab |> Maybe.map (\t -> Page.Admin.tabIsActive pageModel t) |> Maybe.withDefault False then
                             ( model, Cmd.none )
@@ -269,7 +272,7 @@ loadCurrentPage model =
                         Page.Admin.init common tab |> updateWith PageAdmin AdminMsg model
 
                     ( Nothing, _ ) ->
-                        ( { model | page = PageNone }, Cmd.none )
+                        ( { model | page = Just <| PageNotFound common }, Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -371,73 +374,73 @@ update msg model =
         ( IgnoreConfirmPrompt, _ ) ->
             ( { model | ignoredConfirmPrompt = True }, Cmd.none )
 
-        ( HomeMsg pageMsg, PageHome pageModel ) ->
+        ( HomeMsg pageMsg, Just (PageHome pageModel) ) ->
             Page.Home.update pageMsg pageModel |> updateWith PageHome HomeMsg model
 
         ( HomeMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( LoginMsg pageMsg, PageLogin pageModel ) ->
+        ( LoginMsg pageMsg, Just (PageLogin pageModel) ) ->
             Page.Login.update pageMsg pageModel |> updateWith PageLogin LoginMsg model
 
         ( LoginMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( RosterMsg pageMsg, PageRoster pageModel ) ->
+        ( RosterMsg pageMsg, Just (PageRoster pageModel) ) ->
             Page.Roster.update pageMsg pageModel |> updateWith PageRoster RosterMsg model
 
         ( RosterMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( ProfileMsg pageMsg, PageProfile pageModel ) ->
+        ( ProfileMsg pageMsg, Just (PageProfile pageModel) ) ->
             Page.Profile.update pageMsg pageModel |> updateWith PageProfile ProfileMsg model
 
         ( ProfileMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( EditProfileMsg pageMsg, PageEditProfile pageModel ) ->
+        ( EditProfileMsg pageMsg, Just (PageEditProfile pageModel) ) ->
             Page.EditProfile.update pageMsg pageModel |> updateWith PageEditProfile EditProfileMsg model
 
         ( EditProfileMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( EventsMsg pageMsg, PageEvents pageModel ) ->
+        ( EventsMsg pageMsg, Just (PageEvents pageModel) ) ->
             Page.Events.update pageMsg pageModel |> updateWith PageEvents EventsMsg model
 
         ( EventsMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( EditCarpoolsMsg pageMsg, PageEditCarpools pageModel ) ->
+        ( EditCarpoolsMsg pageMsg, Just (PageEditCarpools pageModel) ) ->
             EditCarpools.update pageMsg pageModel |> updateWith PageEditCarpools EditCarpoolsMsg model
 
         ( EditCarpoolsMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( RepertoireMsg pageMsg, PageRepertoire pageModel ) ->
+        ( RepertoireMsg pageMsg, Just (PageRepertoire pageModel) ) ->
             Page.Repertoire.update pageMsg pageModel |> updateWith PageRepertoire RepertoireMsg model
 
         ( RepertoireMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( MinutesMsg pageMsg, PageMinutes pageModel ) ->
+        ( MinutesMsg pageMsg, Just (PageMinutes pageModel) ) ->
             Page.Minutes.update pageMsg pageModel |> updateWith PageMinutes MinutesMsg model
 
         ( MinutesMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( ForgotPasswordMsg pageMsg, PageForgotPassword pageModel ) ->
+        ( ForgotPasswordMsg pageMsg, Just (PageForgotPassword pageModel) ) ->
             Page.ForgotPassword.update pageMsg pageModel |> updateWith PageForgotPassword ForgotPasswordMsg model
 
         ( ForgotPasswordMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( ResetPasswordMsg pageMsg, PageResetPassword pageModel ) ->
+        ( ResetPasswordMsg pageMsg, Just (PageResetPassword pageModel) ) ->
             Page.ResetPassword.update pageMsg pageModel |> updateWith PageResetPassword ResetPasswordMsg model
 
         ( ResetPasswordMsg _, _ ) ->
             ( model, Cmd.none )
 
-        ( AdminMsg pageMsg, PageAdmin pageModel ) ->
+        ( AdminMsg pageMsg, Just (PageAdmin pageModel) ) ->
             Page.Admin.update pageMsg pageModel |> updateWith PageAdmin AdminMsg model
 
         ( AdminMsg _, _ ) ->
@@ -446,7 +449,7 @@ update msg model =
 
 updateWith : (pageModel -> Page) -> (pageMsg -> Msg) -> Model -> ( pageModel, Cmd pageMsg ) -> ( Model, Cmd Msg )
 updateWith toModel toMsg model ( pageModel, subCmd ) =
-    ( { model | page = toModel pageModel }
+    ( { model | page = Just <| toModel pageModel }
     , Cmd.map toMsg subCmd
     )
 
@@ -511,7 +514,9 @@ view model =
             model.common
                 |> Basics.remoteContent
                     (\_ ->
-                        currentPage model.page
+                        model.page
+                            |> Maybe.map viewCurrentPage
+                            |> Maybe.withDefault (text "")
                     )
     in
     { title = "GlubHub"
@@ -535,11 +540,11 @@ view model =
     }
 
 
-currentPage : Page -> Html Msg
-currentPage page =
+viewCurrentPage : Page -> Html Msg
+viewCurrentPage page =
     case page of
-        PageNone ->
-            text ""
+        PageNotFound common ->
+            Page.NotFound.notFound common
 
         PageHome pageModel ->
             Page.Home.view pageModel |> Html.map HomeMsg

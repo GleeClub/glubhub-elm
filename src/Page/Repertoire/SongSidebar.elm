@@ -49,6 +49,11 @@ viewSelectedSong data song =
 pitchSection : (Pitch -> msg) -> String -> Maybe SongMode -> Maybe Pitch -> Html msg
 pitchSection playPitch name maybeMode maybePitch =
     let
+        modeText =
+            maybeMode
+                |> Maybe.map (\m -> " " ++ songModeToString m)
+                |> Maybe.withDefault ""
+
         pitchText =
             case maybePitch of
                 Just pitch ->
@@ -56,7 +61,7 @@ pitchSection playPitch name maybeMode maybePitch =
                         ((onClick <| playPitch pitch)
                             :: Basics.tooltip "Hey kid, wanna pitch?"
                         )
-                        [ text <| pitchToString pitch ]
+                        [ text <| pitchToString pitch ++ modeText ]
 
                 Nothing ->
                     b [] [ text "?" ]
@@ -64,7 +69,6 @@ pitchSection playPitch name maybeMode maybePitch =
     p []
         [ text <| name ++ ": "
         , pitchText
-        , text (maybeMode |> Maybe.map (\m -> " " ++ songModeToString m) |> Maybe.withDefault "")
         ]
 
 

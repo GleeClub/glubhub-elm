@@ -1,41 +1,17 @@
-module Models.Event exposing (AbsenceRequest, AbsenceRequestState(..), Attendance, Event, EventAttendee, EventCarpool, EventWithAttendance, FullEvent, FullEventAttendance, FullEventGig, Gig, GradeChange, Grades, HasAttendance, HasCallAndReleaseTimes, IsEvent, Member, MemberPermission, MemberRole, SimpleAttendance, UpdatedCarpool, absenceRequestDecoder, absenceRequestStateDecoder, attendanceDecoder, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder, eventWithAttendanceDecoder, fullEventAttendanceDecoder, fullEventDecoder, fullEventGigDecoder, gigDecoder, gradeChangeDecoder, gradesDecoder, memberDecoder, memberPermissionDecoder, memberRoleDecoder, simpleAttendanceDecoder)
+module Models.Event exposing (..)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
-import Models.Info exposing (Enrollment, Role, Uniform, enrollmentDecoder, posixDecoder, roleDecoder, uniformDecoder)
+import Models.Info
+    exposing
+        ( Enrollment
+        , Role
+        , enrollmentDecoder
+        , optionalStringDecoder
+        , posixDecoder
+        , roleDecoder
+        )
 import Time exposing (Posix)
-
-
-type alias HasCallAndReleaseTimes a =
-    { a
-        | callTime : Posix
-        , releaseTime : Maybe Posix
-    }
-
-
-type alias IsEvent a =
-    HasCallAndReleaseTimes
-        { a
-            | id : Int
-            , name : String
-            , semester : String
-            , type_ : String
-            , points : Int
-            , comments : Maybe String
-            , location : Maybe String
-            , gigCount : Bool
-            , defaultAttend : Bool
-            , section : Maybe String
-        }
-
-
-type alias HasAttendance a =
-    { a
-        | shouldAttend : Bool
-        , didAttend : Bool
-        , confirmed : Bool
-        , minutesLate : Int
-    }
 
 
 type alias Event =
@@ -52,11 +28,32 @@ type alias Event =
     , defaultAttend : Bool
     , section : Maybe String
     , gig : Maybe Gig
+    , rsvpIssue : Maybe String
+    , attendance : Maybe SimpleAttendance
+    , gradeChange : Maybe SimpleGradeChange
     }
 
 
 eventDecoder : Decoder Event
 eventDecoder =
+    let
+        gigChecker json =
+            let
+                decoder : Decoder Int
+                decoder =
+                    Decode.field "uniform" int
+            in
+            case Decode.decodeValue decoder json of
+                Err _ ->
+                    Decode.succeed Nothing
+
+                Ok _ ->
+                    Decode.andThen
+                        (\x ->
+                            Decode.succeed <| Just x
+                        )
+                        gigDecoder
+    in
     Decode.succeed Event
         |> required "id" int
         |> required "name" string
@@ -65,204 +62,30 @@ eventDecoder =
         |> required "callTime" posixDecoder
         |> optional "releaseTime" (nullable posixDecoder) Nothing
         |> required "points" int
-        |> optional "comments" (nullable string) Nothing
-        |> optional "location" (nullable string) Nothing
+        |> optional "comments" optionalStringDecoder Nothing
+        |> optional "location" optionalStringDecoder Nothing
         |> required "gigCount" bool
         |> required "defaultAttend" bool
         |> optional "section" (nullable string) Nothing
-        |> custom
-            (Decode.value
-                |> Decode.andThen
-                    (\json ->
-                        let
-                            decoder : Decoder Int
-                            decoder =
-                                Decode.field "uniform" int
-                        in
-                        case Decode.decodeValue decoder json of
-                            Err _ ->
-                                Decode.succeed Nothing
-
-                            Ok _ ->
-                                Decode.andThen
-                                    (\x ->
-                                        Decode.succeed <| Just x
-                                    )
-                                    gigDecoder
-                    )
-            )
-
-
-type alias FullEvent =
-    { id : Int
-    , name : String
-    , semester : String
-    , type_ : String
-    , callTime : Posix
-    , releaseTime : Maybe Posix
-    , points : Int
-    , comments : Maybe String
-    , location : Maybe String
-    , gigCount : Bool
-    , defaultAttend : Bool
-    , section : Maybe String
-    , rsvpIssue : Maybe String
-    , gig : Maybe FullEventGig
-    , attendance : Maybe FullEventAttendance
-    }
-
-
-fullEventDecoder : Decoder FullEvent
-fullEventDecoder =
-    Decode.succeed FullEvent
-        |> required "id" int
-        |> required "name" string
-        |> required "semester" string
-        |> required "type" string
-        |> required "callTime" posixDecoder
-        |> optional "releaseTime" (nullable posixDecoder) Nothing
-        |> required "points" int
-        |> optional "comments" (nullable string) Nothing
-        |> optional "location" (nullable string) Nothing
-        |> required "gigCount" bool
-        |> required "defaultAttend" bool
-        |> optional "section" (nullable string) Nothing
+        |> custom (Decode.value |> Decode.andThen gigChecker)
         |> optional "rsvpIssue" (nullable string) Nothing
-        |> custom
-            (Decode.value
-                |> Decode.andThen
-                    (\json ->
-                        let
-                            decoder =
-                                Decode.field "uniform" uniformDecoder
-                        in
-                        case Decode.decodeValue decoder json of
-                            Err _ ->
-                                Decode.succeed Nothing
-
-                            Ok _ ->
-                                fullEventGigDecoder
-                                    |> Decode.andThen
-                                        (\x ->
-                                            Decode.succeed <| Just x
-                                        )
-                    )
-            )
-        |> custom
-            (Decode.value
-                |> Decode.andThen
-                    (\json ->
-                        let
-                            decoder =
-                                Decode.field "shouldAttend" bool
-                        in
-                        case Decode.decodeValue decoder json of
-                            Err _ ->
-                                Decode.succeed Nothing
-
-                            Ok _ ->
-                                fullEventAttendanceDecoder
-                                    |> Decode.andThen
-                                        (\x ->
-                                            Decode.succeed <| Just x
-                                        )
-                    )
-            )
+        |> optional "attendance" (nullable simpleAttendanceDecoder) Nothing
+        |> optional "gradeChange" (nullable simpleGradeChangeDecoder) Nothing
 
 
-type alias FullEventGig =
-    { performanceTime : Posix
-    , uniform : Uniform
-    , contactName : Maybe String
-    , contactEmail : Maybe String
-    , contactPhone : Maybe String
-    , price : Maybe Int
-    , public : Bool
-    , summary : Maybe String
-    , description : Maybe String
-    }
-
-
-fullEventGigDecoder : Decoder FullEventGig
-fullEventGigDecoder =
-    Decode.succeed FullEventGig
-        |> required "performanceTime" posixDecoder
-        |> required "uniform" uniformDecoder
-        |> optional "contactName" (nullable string) Nothing
-        |> optional "contactEmail" (nullable string) Nothing
-        |> optional "contactPhone" (nullable string) Nothing
-        |> optional "price" (nullable int) Nothing
-        |> required "public" bool
-        |> optional "summary" (nullable string) Nothing
-        |> optional "description" (nullable string) Nothing
-
-
-type alias FullEventAttendance =
-    { shouldAttend : Bool
-    , didAttend : Bool
-    , confirmed : Bool
-    , minutesLate : Int
-    , gradeChange : Maybe Float
-    , gradeChangeReason : Maybe String
-    , partialScore : Maybe Float
-    }
-
-
-fullEventAttendanceDecoder : Decoder FullEventAttendance
-fullEventAttendanceDecoder =
-    Decode.succeed FullEventAttendance
-        |> required "shouldAttend" bool
-        |> required "didAttend" bool
-        |> required "confirmed" bool
-        |> required "minutesLate" int
-        |> optional "gradeChange" (nullable float) Nothing
-        |> optional "gradeChangeReason" (nullable string) Nothing
-        |> optional "partialScore" (nullable float) Nothing
-
-
-type alias AbsenceRequest =
-    { member : String
-    , event : Int
-    , time : Posix
+type alias SimpleGradeChange =
+    { change : Float
     , reason : String
-    , state : AbsenceRequestState
+    , partialScore : Float
     }
 
 
-absenceRequestDecoder : Decoder AbsenceRequest
-absenceRequestDecoder =
-    Decode.succeed AbsenceRequest
-        |> required "member" string
-        |> required "event" int
-        |> required "time" posixDecoder
+simpleGradeChangeDecoder : Decoder SimpleGradeChange
+simpleGradeChangeDecoder =
+    Decode.succeed SimpleGradeChange
+        |> required "change" float
         |> required "reason" string
-        |> required "state" absenceRequestStateDecoder
-
-
-type AbsenceRequestState
-    = Approved
-    | Denied
-    | Pending
-
-
-absenceRequestStateDecoder : Decoder AbsenceRequestState
-absenceRequestStateDecoder =
-    string
-        |> Decode.andThen
-            (\x ->
-                case x of
-                    "approved" ->
-                        Decode.succeed Approved
-
-                    "denied" ->
-                        Decode.succeed Denied
-
-                    "pending" ->
-                        Decode.succeed Pending
-
-                    _ ->
-                        Decode.fail "AbsenceRequestState can only be \"approved\", \"denied\", or \"pending\""
-            )
+        |> required "partialScore" float
 
 
 type alias Gig =
@@ -283,13 +106,13 @@ gigDecoder =
     Decode.succeed Gig
         |> required "performanceTime" posixDecoder
         |> required "uniform" int
-        |> optional "contactName" (nullable string) Nothing
-        |> optional "contactEmail" (nullable string) Nothing
-        |> optional "contactPhone" (nullable string) Nothing
+        |> optional "contactName" optionalStringDecoder Nothing
+        |> optional "contactEmail" optionalStringDecoder Nothing
+        |> optional "contactPhone" optionalStringDecoder Nothing
         |> optional "price" (nullable int) Nothing
         |> required "public" bool
-        |> optional "summary" (nullable string) Nothing
-        |> optional "description" (nullable string) Nothing
+        |> optional "summary" optionalStringDecoder Nothing
+        |> optional "description" optionalStringDecoder Nothing
 
 
 type alias Attendance =
@@ -341,21 +164,6 @@ simpleAttendanceDecoder =
         |> required "didAttend" bool
         |> required "confirmed" bool
         |> required "minutesLate" int
-
-
-type alias EventWithAttendance =
-    { event : FullEvent
-    , attendance : SimpleAttendance
-    , rsvpIssue : Maybe String
-    }
-
-
-eventWithAttendanceDecoder : Decoder EventWithAttendance
-eventWithAttendanceDecoder =
-    Decode.succeed EventWithAttendance
-        |> custom fullEventDecoder
-        |> custom simpleAttendanceDecoder
-        |> optional "rsvpIssue" (nullable string) Nothing
 
 
 type alias EventCarpool =
@@ -451,21 +259,21 @@ memberDecoder =
     Decode.succeed Member
         |> required "email" string
         |> required "firstName" string
-        |> optional "preferredName" (nullable string) Nothing
+        |> optional "preferredName" optionalStringDecoder Nothing
         |> required "lastName" string
         |> required "phoneNumber" string
-        |> optional "picture" (nullable string) Nothing
+        |> optional "picture" optionalStringDecoder Nothing
         |> required "passengers" int
         |> required "location" string
         |> optional "onCampus" (nullable bool) Nothing
-        |> optional "about" (nullable string) Nothing
-        |> optional "major" (nullable string) Nothing
-        |> optional "minor" (nullable string) Nothing
-        |> optional "hometown" (nullable string) Nothing
+        |> optional "about" optionalStringDecoder Nothing
+        |> optional "major" optionalStringDecoder Nothing
+        |> optional "minor" optionalStringDecoder Nothing
+        |> optional "hometown" optionalStringDecoder Nothing
         |> optional "arrivedAtTech" (nullable int) Nothing
-        |> optional "gatewayDrug" (nullable string) Nothing
-        |> optional "conflicts" (nullable string) Nothing
-        |> optional "dietaryRestrictions" (nullable string) Nothing
+        |> optional "gatewayDrug" optionalStringDecoder Nothing
+        |> optional "conflicts" optionalStringDecoder Nothing
+        |> optional "dietaryRestrictions" optionalStringDecoder Nothing
         |> optional "section" (nullable string) Nothing
         |> optional "enrollment" enrollmentDecoder Nothing
         |> optional "permissions" (Decode.list memberPermissionDecoder) []
