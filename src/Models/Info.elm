@@ -16,6 +16,7 @@ module Models.Info exposing
     , eventTypeDecoder
     , infoDecoder
     , mediaTypeDecoder
+    , optionalStringDecoder
     , permissionDecoder
     , permissionTypeDecoder
     , posixDecoder
@@ -27,12 +28,18 @@ module Models.Info exposing
 
 import Json.Decode as Decode exposing (Decoder, bool, int, maybe, nullable, string, succeed)
 import Json.Decode.Pipeline exposing (optional, required)
+import Maybe.Extra exposing (filter)
 import Time exposing (Posix, millisToPosix)
 
 
 posixDecoder : Decoder Posix
 posixDecoder =
     int |> Decode.map Time.millisToPosix
+
+
+optionalStringDecoder : Decoder (Maybe String)
+optionalStringDecoder =
+    nullable string |> Decode.map (filter (not << String.isEmpty))
 
 
 type alias Info =
@@ -169,7 +176,7 @@ permissionDecoder : Decoder Permission
 permissionDecoder =
     Decode.succeed Permission
         |> required "name" string
-        |> optional "description" (nullable string) Nothing
+        |> optional "description" optionalStringDecoder Nothing
         |> required "type" permissionTypeDecoder
 
 
@@ -223,8 +230,8 @@ uniformDecoder =
     Decode.succeed Uniform
         |> required "id" int
         |> required "name" string
-        |> optional "color" (nullable string) Nothing
-        |> optional "description" (nullable string) Nothing
+        |> optional "color" optionalStringDecoder Nothing
+        |> optional "description" optionalStringDecoder Nothing
 
 
 type alias Semester =

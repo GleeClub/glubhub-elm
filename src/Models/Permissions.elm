@@ -1,4 +1,4 @@
-module Models.Permissions exposing (editLinks, editRepertoire)
+module Models.Permissions exposing (editLinks, editRepertoire, viewEventPrivateDetails)
 
 
 editLinks : String
@@ -9,3 +9,8 @@ editLinks =
 editRepertoire : String
 editRepertoire =
     "edit-repertoire"
+
+
+viewEventPrivateDetails : String
+viewEventPrivateDetails =
+    "view-event-private-details"

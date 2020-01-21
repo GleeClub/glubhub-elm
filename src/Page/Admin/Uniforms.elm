@@ -217,7 +217,11 @@ uniformTable newUniform allUniforms =
         newHeaderRow =
             tr [] [ td [] [ text "New" ] ]
     in
-    table [ style "border-spacing" "5px", style "border-collapse" "separate" ]
+    table
+        [ style "width" "100%"
+        , style "border-spacing" "5px"
+        , style "border-collapse" "separate"
+        ]
         ((headerRow :: uniformRows) ++ [ newHeaderRow, newUniformRow newUniform ])
 
 

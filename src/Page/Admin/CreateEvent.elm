@@ -1,16 +1,15 @@
 module Page.Admin.CreateEvent exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, dateInput, fieldWrapper, textInput, textareaInput, timeInput)
+import Components.Forms exposing (checkboxInput, dateInput, fieldWrapper, selectInput, textInput, textareaInput, timeInput)
 import Datetime exposing (hyphenDateFormatter, parseFormDateAndTimeString, twentyFourHourTimeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, br, button, div, form, input, label, option, select, text, textarea)
-import Html.Attributes exposing (checked, class, placeholder, selected, type_, value)
+import Html exposing (Html, br, button, div, form, input, label, text, textarea)
+import Html.Attributes exposing (checked, class, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
 import List.Extra as List
-import Maybe.Extra exposing (isNothing)
 import Models.Admin exposing (GigRequest, gigRequestDecoder)
 import Models.Info exposing (Semester, Uniform, semesterDecoder)
 import Route
@@ -499,19 +498,8 @@ middleColumnInEventForm common remoteSemesters createForm =
                     , onClick <| UpdateNewEventForm { newEvent | type_ = eventType.name }
                     ]
                     []
-                , text eventType.name
+                , text <| " " ++ eventType.name
                 ]
-
-        ( semesters, semestersAreLoading ) =
-            case remoteSemesters of
-                Loaded sems ->
-                    ( sems |> List.map .name, "" )
-
-                Loading ->
-                    ( [ common.currentSemester.name ], " is-loading" )
-
-                _ ->
-                    ( [ common.currentSemester.name ], "" )
     in
     Basics.column
         [ fieldWrapper { title = "Event Type", helpText = Nothing } <|
@@ -519,48 +507,45 @@ middleColumnInEventForm common remoteSemesters createForm =
                 |> List.map (eventTypeOption newEvent.type_)
                 |> List.intersperse (br [] [])
             )
-        , div [ class "field" ]
-            [ label [ class "label" ] [ text "Semester" ]
-            , div [ class <| "select control" ++ semestersAreLoading ]
-                [ select
-                    [ onInput (\semester -> UpdateNewEventForm { newEvent | semester = semester }) ]
-                    (semesters |> List.map (\s -> option [ value s, selected (s == newEvent.semester) ] [ text s ]))
-                ]
-            ]
-        , div [ class "field" ]
-            [ label [ class "label" ] [ text "Uniform" ]
-            , div [ class "select control" ]
-                [ select
-                    [ onInput
-                        (\uniform ->
-                            UpdateNewGigForm
-                                { newGig
-                                    | uniform =
-                                        common.info.uniforms
-                                            |> List.find (\u -> u.name == uniform)
-                                }
-                        )
-                    ]
-                    (option
-                        [ value "", selected <| isNothing newGig.uniform ]
-                        [ text "(no uniform)" ]
-                        :: (common.info.uniforms
-                                |> List.map
-                                    (\u ->
-                                        option
-                                            [ value u.name
-                                            , selected
-                                                (newGig.uniform
-                                                    |> Maybe.map (\current -> current.id == u.id)
-                                                    |> Maybe.withDefault False
-                                                )
-                                            ]
-                                            [ text u.name ]
-                                    )
-                           )
-                    )
-                ]
-            ]
+        , selectInput
+            { title = "Semester"
+            , helpText = Nothing
+            , values =
+                remoteSemesters
+                    |> Utils.remoteToMaybe
+                    |> Maybe.map (List.map .name)
+                    |> Maybe.withDefault [ common.currentSemester.name ]
+            , render = \name -> ( name, name )
+            , loading = remoteSemesters == Loading
+            , selected = (==) newEvent.semester
+            , onSelect = \semester -> UpdateNewEventForm { newEvent | semester = semester }
+            }
+        , selectInput
+            { title = "Uniform"
+            , helpText = Nothing
+            , values = Nothing :: (common.info.uniforms |> List.map Just)
+            , render =
+                Maybe.map (\u -> ( u.name, u.name ))
+                    >> Maybe.withDefault ( "", "(no uniform)" )
+            , loading = False
+            , selected =
+                \uniform ->
+                    case ( uniform, newGig.uniform ) of
+                        ( Just u, Just selected ) ->
+                            u.id == selected.id
+
+                        ( Nothing, Nothing ) ->
+                            True
+
+                        _ ->
+                            False
+            , onSelect =
+                \name ->
+                    UpdateNewGigForm
+                        { newGig
+                            | uniform = common.info.uniforms |> List.find (\u -> u.name == name)
+                        }
+            }
         , fieldWrapper { title = "Event Summary", helpText = Nothing } <|
             [ textarea
                 [ class "textarea"
@@ -625,21 +610,15 @@ rightColumnInEventForm createForm =
                     , isChecked = newEvent.gigCount
                     , onChange = \gigCount -> UpdateNewEventForm { newEvent | gigCount = gigCount }
                     }
-               , div [ class "field" ]
-                    [ label [ class "label" ] [ text "Repeat" ]
-                    , div [ class "select control" ]
-                        [ select
-                            [ value <| periodToString newEvent.repeat
-                            , onInput (\period -> UpdateNewEventForm { newEvent | repeat = stringToPeriod period })
-                            ]
-                            (allRepeatPeriods
-                                |> List.map
-                                    (\p ->
-                                        option [ value <| periodToString p ] [ text <| (periodToString p |> capitalizeFirstChar) ]
-                                    )
-                            )
-                        ]
-                    ]
+               , selectInput
+                    { title = "Repeat"
+                    , helpText = Nothing
+                    , values = allRepeatPeriods
+                    , render = \p -> ( periodToString p, periodToString p |> capitalizeFirstChar )
+                    , loading = False
+                    , selected = (==) newEvent.repeat
+                    , onSelect = \period -> UpdateNewEventForm { newEvent | repeat = stringToPeriod period }
+                    }
                , dateInput
                     { title = "Repeat Until"
                     , value = newEvent.repeatUntil

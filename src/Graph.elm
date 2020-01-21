@@ -6,7 +6,7 @@ import Axis
 import Color exposing (Color)
 import Html.Events exposing (on)
 import Json.Decode as Decode
-import Models.Event exposing (FullEvent)
+import Models.Event exposing (Event)
 import Models.Info exposing (Semester)
 import Path exposing (Path)
 import Scale exposing (ContinuousScale)
@@ -81,7 +81,7 @@ transformToAreaData semester ( callTime, partialScore ) =
     Just ( ( callTimeCoord, scoreLowerBound ), ( callTimeCoord, score ) )
 
 
-eventPoint : Semester -> (Maybe HoveredEvent -> msg) -> FullEvent -> Svg msg
+eventPoint : Semester -> (Maybe HoveredEvent -> msg) -> Event -> Svg msg
 eventPoint semester hoverMsg event =
     let
         xPos =
@@ -118,12 +118,12 @@ area semester pastEvents =
         |> Shape.area Shape.monotoneInXCurve
 
 
-eventPartialScore : FullEvent -> Float
+eventPartialScore : Event -> Float
 eventPartialScore event =
-    event.attendance |> Maybe.andThen .partialScore |> Maybe.withDefault 0
+    event.gradeChange |> Maybe.map .partialScore |> Maybe.withDefault 0
 
 
-graphGrades : Semester -> List FullEvent -> (Maybe HoveredEvent -> msg) -> Svg msg
+graphGrades : Semester -> List Event -> (Maybe HoveredEvent -> msg) -> Svg msg
 graphGrades semester events hoverMsg =
     let
         callTimesAndScores =
@@ -169,13 +169,12 @@ graphGrades semester events hoverMsg =
 type alias HoveredEvent =
     { x : Int
     , y : Int
-    , event : FullEvent
+    , event : Event
     }
 
 
-hoveredEventDecoder : FullEvent -> Decode.Decoder (Maybe HoveredEvent)
+hoveredEventDecoder : Event -> Decode.Decoder (Maybe HoveredEvent)
 hoveredEventDecoder event =
-    Decode.map3 (\x y e -> Just { x = x, y = y, event = e })
-        (Decode.at [ "clientX" ] Decode.int)
-        (Decode.at [ "clientY" ] Decode.int)
-        (Decode.succeed event)
+    Decode.map2 (\x y -> Just { x = x, y = y, event = event })
+        (Decode.at [ "pageX" ] Decode.int)
+        (Decode.at [ "pageY" ] Decode.int)

@@ -8,6 +8,7 @@ module Components.Basics exposing
     , column
     , columns
     , divider
+    , emailLink
     , errorBox
     , horizontalField
     , linkButton
@@ -15,23 +16,26 @@ module Components.Basics exposing
     , multilineTooltip
     , narrowColumn
     , notFoundView
+    , phoneLink
     , remoteContent
     , remoteContentFull
     , renderIfHasPermission
     , sidebar
     , spinner
     , submissionStateBox
+    , subtitle
     , title
     , tooltip
+    , tooltipRight
     )
 
 import Error exposing (GreaseError(..))
-import Html exposing (Html, a, article, div, h1, i, input, label, p, span, text)
+import Html exposing (Html, a, article, div, h1, h3, i, input, label, p, span, text)
 import Html.Attributes exposing (attribute, class, hidden, href, id, name, placeholder, style, type_, value)
 import Html.Events exposing (onClick, onInput)
-import Models.Event exposing (HasAttendance, IsEvent)
+import Models.Event exposing (Event)
 import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, permittedTo, submissionStateBoxId)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, formatPhone, permittedTo, submissionStateBoxId)
 
 
 spinner : Html a
@@ -53,6 +57,11 @@ notFoundView =
 title : String -> Html msg
 title content =
     h1 [ class "title", style "text-align" "center" ] [ text content ]
+
+
+subtitle : String -> Html msg
+subtitle content =
+    h3 [ class "subtitle is-3", style "text-align" "center" ] [ text content ]
 
 
 column : List (Html msg) -> Html msg
@@ -84,6 +93,11 @@ tooltip content =
     ]
 
 
+tooltipRight : String -> List (Html.Attribute msg)
+tooltipRight content =
+    class "is-tooltip-right" :: tooltip content
+
+
 multilineTooltip : String -> List (Html.Attribute msg)
 multilineTooltip content =
     class "is-tooltip-multiline" :: tooltip content
@@ -108,7 +122,15 @@ checkOrCross isCheck =
 
 divider : String -> Html msg
 divider content =
-    div [ class "is-divider", attribute "data-content" content ] []
+    if String.isEmpty content then
+        div [ class "is-divider" ] []
+
+    else
+        div
+            [ class "is-divider"
+            , attribute "data-content" content
+            ]
+            []
 
 
 backTextButton : String -> msg -> Html msg
@@ -165,39 +187,48 @@ horizontalField field =
         ]
 
 
-attendanceIcon : Common -> IsEvent a -> Maybe (HasAttendance b) -> Html msg
-attendanceIcon common event attendance =
+attendanceIcon : Common -> Event -> Html msg
+attendanceIcon common event =
     let
-        didAttend =
-            attendance
-                |> Maybe.map .didAttend
-                |> Maybe.withDefault False
-
         shouldAttend =
-            attendance
+            event.attendance
                 |> Maybe.map .shouldAttend
                 |> Maybe.withDefault False
 
         confirmed =
-            attendance
+            event.attendance
                 |> Maybe.map .confirmed
                 |> Maybe.withDefault False
 
-        ( wrapping, color, success ) =
-            if eventIsOver common.now event then
-                if didAttend || not shouldAttend then
-                    ( [ style "white-space" "nowrap" ], "has-text-success", didAttend )
+        tooltipText =
+            (if confirmed then
+                "confirmed"
 
-                else
-                    ( [ style "white-space" "nowrap" ], "has-text-danger", didAttend )
+             else
+                "unconfirmed"
+            )
+                ++ ", "
+                ++ (if shouldAttend then
+                        "attending"
 
-            else if confirmed then
-                ( [], "has-text-success", shouldAttend )
+                    else
+                        "not attending"
+                   )
+
+        ( color, success ) =
+            if confirmed then
+                ( "has-text-success", shouldAttend )
 
             else
-                ( [], "has-text-grey", shouldAttend )
+                ( "has-text-grey", shouldAttend )
     in
-    div (class color :: wrapping) [ checkOrCross success ]
+    if event |> eventIsOver common then
+        text ""
+
+    else
+        div
+            (class color :: class "is-tooltip-right" :: tooltip tooltipText)
+            [ checkOrCross success ]
 
 
 remoteContentFull : Html msg -> (a -> Html msg) -> RemoteData a -> Html msg
@@ -351,3 +382,13 @@ modal closeMsg content =
         , div [ class "modal-content", style "text-align" "center" ]
             [ box [ content ] ]
         ]
+
+
+emailLink : String -> Html msg
+emailLink email =
+    a [ href <| "mailto:" ++ email ] [ text email ]
+
+
+phoneLink : String -> Html msg
+phoneLink phoneNumber =
+    a [ href <| "tel:" ++ phoneNumber ] [ text <| formatPhone phoneNumber ]

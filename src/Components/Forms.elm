@@ -6,15 +6,17 @@ module Components.Forms exposing
     , fileInput
     , genericTextInput
     , numberInput
+    , numberInputWithPrefix
     , passwordInput
     , selectInput
     , textInput
+    , textInputWithPrefix
     , textareaInput
     , timeInput
     )
 
 import File exposing (File)
-import Html exposing (Html, div, i, input, label, option, p, select, span, text, textarea)
+import Html exposing (Html, a, div, i, input, label, option, p, select, span, text, textarea)
 import Html.Attributes exposing (checked, class, name, placeholder, required, selected, type_, value)
 import Html.Events exposing (on, onCheck, onInput)
 import Json.Decode as Decode
@@ -93,6 +95,63 @@ passwordInput =
     genericTextInput "password"
 
 
+type alias TextInputWithPrefix msg =
+    { title : String
+    , prefix : String
+    , helpText : Maybe String
+    , value : String
+    , placeholder : String
+    , required : Bool
+    , onInput : String -> msg
+    }
+
+
+textInputWithPrefix : TextInputWithPrefix msg -> Html msg
+textInputWithPrefix data =
+    fieldWrapper data <|
+        [ div [ class "field has-addons" ]
+            [ p [ class "control" ]
+                [ a [ class "button is-static" ]
+                    [ text data.prefix ]
+                ]
+            , p [ class "control" ]
+                [ input
+                    [ class "input"
+                    , type_ "text"
+                    , placeholder data.placeholder
+                    , value data.value
+                    , required data.required
+                    , onInput data.onInput
+                    ]
+                    []
+                ]
+            ]
+        ]
+
+
+numberInputWithPrefix : TextInputWithPrefix msg -> Html msg
+numberInputWithPrefix data =
+    fieldWrapper data <|
+        [ div [ class "field has-addons" ]
+            [ p [ class "control" ]
+                [ a [ class "button is-static" ]
+                    [ text data.prefix ]
+                ]
+            , p [ class "control" ]
+                [ input
+                    [ class "input"
+                    , type_ "number"
+                    , placeholder data.placeholder
+                    , value data.value
+                    , required data.required
+                    , onInput data.onInput
+                    ]
+                    []
+                ]
+            ]
+        ]
+
+
 type alias CheckboxInput msg =
     { content : String
     , isChecked : Bool
@@ -111,7 +170,7 @@ checkboxInput data =
                     , onCheck data.onChange
                     ]
                     []
-                , text data.content
+                , text <| " " ++ data.content
                 ]
             ]
         ]

@@ -22,6 +22,10 @@ table.is-fullwidth.is-hoverable:hover {
   cursor: pointer;
 }
 
+.select:not(.is-multiple):not(.is-loading)::after {
+  border-color: #b4a46a;
+}
+
 html,
 body,
 #app {

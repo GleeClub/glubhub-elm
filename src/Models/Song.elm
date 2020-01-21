@@ -45,16 +45,8 @@ songDecoder =
         |> required "title" string
         |> optional "info" (nullable string) Nothing
         |> required "current" bool
-        |> optional "key"
-            (nullable string
-                |> Decode.andThen (\s -> s |> Maybe.withDefault "" |> pitchDecoder)
-            )
-            Nothing
-        |> optional "startingPitch"
-            (nullable string
-                |> Decode.andThen (\s -> s |> Maybe.withDefault "" |> pitchDecoder)
-            )
-            Nothing
+        |> optional "key" pitchDecoder Nothing
+        |> optional "startingPitch" pitchDecoder Nothing
         |> optional "mode" (nullable songModeDecoder) Nothing
         |> optional "links" (Decode.list songLinkSectionDecoder) []
 
@@ -180,54 +172,59 @@ allPitches =
     allBasePitches |> List.concatMap allPitchVariations
 
 
-pitchDecoder : String -> Decoder (Maybe Pitch)
-pitchDecoder pitch =
-    let
-        base =
-            case pitch |> String.slice 0 1 of
-                "A" ->
-                    Decode.succeed A
+pitchDecoder : Decoder (Maybe Pitch)
+pitchDecoder =
+    nullable string
+        |> Decode.map (Maybe.withDefault "")
+        |> Decode.andThen
+            (\pitch ->
+                let
+                    base =
+                        case pitch |> String.slice 0 1 of
+                            "A" ->
+                                Decode.succeed A
 
-                "B" ->
-                    Decode.succeed B
+                            "B" ->
+                                Decode.succeed B
 
-                "C" ->
-                    Decode.succeed C
+                            "C" ->
+                                Decode.succeed C
 
-                "D" ->
-                    Decode.succeed D
+                            "D" ->
+                                Decode.succeed D
 
-                "E" ->
-                    Decode.succeed E
+                            "E" ->
+                                Decode.succeed E
 
-                "F" ->
-                    Decode.succeed F
+                            "F" ->
+                                Decode.succeed F
 
-                "G" ->
-                    Decode.succeed G
+                            "G" ->
+                                Decode.succeed G
 
-                _ ->
-                    Decode.fail "invalid pitch"
+                            _ ->
+                                Decode.fail "invalid pitch"
 
-        accidental =
-            case pitch |> String.slice 1 10 of
-                "" ->
-                    Decode.succeed Natural
+                    accidental =
+                        case pitch |> String.dropLeft 1 of
+                            "" ->
+                                Decode.succeed Natural
 
-                "Flat" ->
-                    Decode.succeed Flat
+                            "Flat" ->
+                                Decode.succeed Flat
 
-                "Sharp" ->
-                    Decode.succeed Sharp
+                            "Sharp" ->
+                                Decode.succeed Sharp
 
-                _ ->
-                    Decode.fail "invalid accidental"
-    in
-    if String.isEmpty pitch then
-        Decode.succeed Nothing
+                            _ ->
+                                Decode.fail "invalid accidental"
+                in
+                if String.isEmpty pitch then
+                    Decode.succeed Nothing
 
-    else
-        Decode.map2 (\b a -> Just <| Pitch b a) base accidental
+                else
+                    Decode.map2 (\b a -> Just <| Pitch b a) base accidental
+            )
 
 
 pitchEncoder : Pitch -> String
@@ -242,7 +239,7 @@ pitchEncoder pitch =
                     "B"
 
                 C ->
-                    "D"
+                    "C"
 
                 D ->
                     "D"

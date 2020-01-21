@@ -691,5 +691,5 @@ carpoolMemberRow memberRow =
         , col [ text (memberRow.member |> fullName) ]
         , col [ text memberRow.member.location ]
         , col [ text passengerCount ]
-        , col [ Basics.attendanceIcon memberRow.common memberRow.event memberRow.attendance ]
+        , col [ Basics.attendanceIcon memberRow.common memberRow.event ]
         ]

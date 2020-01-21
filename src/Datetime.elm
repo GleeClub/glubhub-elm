@@ -183,7 +183,7 @@ parseFormDate dateString =
         (Just year) :: (Just monthInt) :: (Just day) :: [] ->
             case monthInt |> monthFromInt of
                 Just month ->
-                    Just ( day, month, year )
+                    Just ( year, month, day )
 
                 Nothing ->
                     Nothing
@@ -197,11 +197,11 @@ parseFormDateString common dateString =
     dateString
         |> parseFormDate
         |> Maybe.map
-            (\( day, month, year ) ->
+            (\( year, month, day ) ->
                 partsToPosix common.timeZone
-                    { day = day
+                    { year = year
                     , month = month
-                    , year = year
+                    , day = day
                     , hour = 0
                     , minute = 0
                     , second = 0
@@ -217,7 +217,7 @@ parseFormDateAndTimeString common dateString timeString =
         , timeString |> String.split ":" |> List.map String.toInt
         )
     of
-        ( Just ( day, month, year ), (Just hour) :: (Just minute) :: [] ) ->
+        ( Just ( year, month, day ), (Just hour) :: (Just minute) :: [] ) ->
             Just <|
                 partsToPosix common.timeZone
                     { year = year
