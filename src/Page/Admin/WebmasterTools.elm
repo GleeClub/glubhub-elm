@@ -2,12 +2,15 @@ module Page.Admin.WebmasterTools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Components.Forms exposing (fileInput)
+import Error exposing (GreaseResult, parseResponse)
 import File exposing (File)
 import Html exposing (Html, button, div, header, text)
 import Html.Attributes exposing (class)
 import Html.Events exposing (onClick)
 import Http
-import Utils exposing (Common, RemoteData(..), alert)
+import Json.Decode as Decode
+import Task
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, isLoadingClass)
 
 
 
@@ -17,8 +20,9 @@ import Utils exposing (Common, RemoteData(..), alert)
 type alias Model =
     { common : Common
     , apiFile : Maybe File
+    , apiState : SubmissionState
     , frontendFile : Maybe File
-    , sending : Bool
+    , frontendState : SubmissionState
     }
 
 
@@ -26,8 +30,9 @@ init : Common -> ( Model, Cmd Msg )
 init common =
     ( { common = common
       , apiFile = Nothing
+      , apiState = NotSentYet
       , frontendFile = Nothing
-      , sending = False
+      , frontendState = NotSentYet
       }
     , Cmd.none
     )
@@ -40,10 +45,10 @@ init common =
 type Msg
     = SelectApiBinary (List File)
     | UploadApi
-    | OnUploadApi (Result Http.Error ())
+    | OnUploadApi (GreaseResult ())
     | SelectFrontendZip (List File)
     | UploadFrontend
-    | OnUploadFrontend (Result Http.Error ())
+    | OnUploadFrontend (GreaseResult ())
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -58,13 +63,13 @@ update msg model =
                     ( model, alert "fam. upload a file." )
 
                 Just file ->
-                    ( { model | sending = True }, uploadApi model.common file )
+                    ( { model | apiState = Sending }, uploadApi model.common file )
 
         OnUploadApi (Ok _) ->
-            ( { model | sending = False, apiFile = Nothing }, alert "Success!" )
+            ( { model | apiState = NotSentYet, apiFile = Nothing }, Cmd.none )
 
-        OnUploadApi (Err _) ->
-            ( { model | sending = False }, alert "It broke." )
+        OnUploadApi (Err error) ->
+            ( { model | apiState = ErrorSending error }, Cmd.none )
 
         SelectFrontendZip files ->
             ( { model | frontendFile = List.head files }, Cmd.none )
@@ -75,13 +80,13 @@ update msg model =
                     ( model, alert "fam. upload a file." )
 
                 Just file ->
-                    ( { model | sending = True }, uploadFrontend model.common file )
+                    ( { model | frontendState = Sending }, uploadFrontend model.common file )
 
         OnUploadFrontend (Ok _) ->
-            ( { model | sending = False, frontendFile = Nothing }, alert "Success!" )
+            ( { model | frontendState = NotSentYet, frontendFile = Nothing }, Cmd.none )
 
-        OnUploadFrontend (Err _) ->
-            ( { model | sending = False }, alert "It broke." )
+        OnUploadFrontend (Err error) ->
+            ( { model | frontendState = ErrorSending error }, Cmd.none )
 
 
 
@@ -90,28 +95,28 @@ update msg model =
 
 uploadApi : Common -> File -> Cmd Msg
 uploadApi common apiFile =
-    Http.request
+    Http.task
         { method = "POST"
         , url = "https://gleeclub.gatech.edu/cgi-bin/admin_tools/upload_api"
         , body = Http.fileBody apiFile
         , headers = [ Http.header "token" common.token ]
         , timeout = Nothing
-        , tracker = Nothing
-        , expect = Http.expectWhatever OnUploadApi
+        , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
         }
+        |> Task.attempt OnUploadApi
 
 
 uploadFrontend : Common -> File -> Cmd Msg
 uploadFrontend common frontendFile =
-    Http.request
+    Http.task
         { method = "POST"
         , url = "https://gleeclub.gatech.edu/cgi-bin/api/upload_frontend"
         , body = Http.fileBody frontendFile
         , headers = [ Http.header "token" common.token ]
         , timeout = Nothing
-        , tracker = Nothing
-        , expect = Http.expectWhatever OnUploadFrontend
+        , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
         }
+        |> Task.attempt OnUploadFrontend
 
 
 
@@ -131,8 +136,17 @@ view model =
                         , file = model.apiFile
                         , selectFile = SelectApiBinary
                         }
-                    , button [ class "button", onClick UploadApi ]
+                    , button
+                        [ class <| "button" ++ isLoadingClass (model.apiState == Sending)
+                        , onClick UploadApi
+                        ]
                         [ text "Send it!" ]
+                    , case model.apiState of
+                        ErrorSending error ->
+                            Basics.errorBox error
+
+                        _ ->
+                            text ""
                     ]
                 , div [ class "is-divider-vertical" ] []
                 , Basics.column
@@ -142,8 +156,17 @@ view model =
                         , file = model.frontendFile
                         , selectFile = SelectFrontendZip
                         }
-                    , button [ class "button", onClick UploadFrontend ]
+                    , button
+                        [ class <| "button" ++ isLoadingClass (model.frontendState == Sending)
+                        , onClick UploadFrontend
+                        ]
                         [ text "Send it!" ]
+                    , case model.frontendState of
+                        ErrorSending error ->
+                            Basics.errorBox error
+
+                        _ ->
+                            text ""
                     ]
                 ]
             ]

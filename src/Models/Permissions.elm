@@ -1,4 +1,4 @@
-module Models.Permissions exposing (editLinks, editRepertoire, viewEventPrivateDetails)
+module Models.Permissions exposing (deleteUser, editLinks, editRepertoire, switchUser, viewEventPrivateDetails)
 
 
 editLinks : String
@@ -14,3 +14,13 @@ editRepertoire =
 viewEventPrivateDetails : String
 viewEventPrivateDetails =
     "view-event-private-details"
+
+
+switchUser : String
+switchUser =
+    "switch-user"
+
+
+deleteUser : String
+deleteUser =
+    "delete-user"

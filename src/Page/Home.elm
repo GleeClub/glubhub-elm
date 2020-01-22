@@ -1,4 +1,4 @@
-module Page.Home exposing (Model, Msg(..), attendanceMessage, gradesBlock, init, loadEvents, upcomingEvents, update, view, volunteerism)
+module Page.Home exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Datetime exposing (dateFormatter, fullDateTimeFormatter, timeFromNow)
@@ -14,7 +14,7 @@ import Models.Info exposing (Semester)
 import Route
 import Task
 import Time exposing (Zone)
-import Utils exposing (Common, RemoteData(..), eventIsOver, getRequest, resultToRemote, romanNumeral)
+import Utils exposing (Common, RemoteData(..), eventIsOver, getRequest, resultToRemote, romanNumeral, roundToTwoDigits)
 
 
 
@@ -96,11 +96,6 @@ attendanceMessage maybeGrades =
 
             else
                 "BRUH get it together."
-
-
-roundToTwoDigits : Float -> Float
-roundToTwoDigits x =
-    toFloat (round (x * 100.0)) / 100.0
 
 
 

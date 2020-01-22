@@ -2,15 +2,18 @@ module Page.Admin.Dues exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Components.Forms exposing (checkboxInput, fieldWrapper, numberInputWithPrefix, selectInput, textInput)
+import Datetime exposing (..)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, h1, h3, input, label, li, p, span, table, td, text, tr, ul)
+import Html exposing (Html, a, b, br, button, div, h1, h3, input, label, li, p, span, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (attribute, class, style, type_, value)
 import Html.Events exposing (onClick, onInput)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Models.Admin exposing (Fee, feeDecoder)
 import Models.Event exposing (Member)
+import Models.Info exposing (Transaction, transactionDecoder)
 import Task
+import Time exposing (posixToMillis)
 import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, isLoadingClass, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
 
 
@@ -21,7 +24,9 @@ import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, ge
 type alias Model =
     { common : Common
     , fees : RemoteData (List Fee)
-    , state : SubmissionState
+    , feeState : SubmissionState
+    , transactions : RemoteData (List Transaction)
+    , transactionState : SubmissionState
     , tab : Maybe DuesTab
     }
 
@@ -53,10 +58,12 @@ init : Common -> ( Model, Cmd Msg )
 init common =
     ( { common = common
       , fees = Loading
-      , state = NotSentYet
+      , feeState = NotSentYet
+      , transactions = Loading
+      , transactionState = NotSentYet
       , tab = Nothing
       }
-    , loadFees common
+    , Cmd.batch [ loadFees common, loadTransactions common ]
     )
 
 
@@ -66,6 +73,7 @@ init common =
 
 type Msg
     = OnLoadFees (GreaseResult (List Fee))
+    | OnLoadTransactions (GreaseResult (List Transaction))
     | UpdateFeeAmount Fee String
     | OnUpdateFee (GreaseResult ())
     | ChangeTab (Maybe DuesTab)
@@ -76,6 +84,8 @@ type Msg
     | UpdateTransactionBatch TransactionBatch
     | SendTransactionBatch
     | OnSendTransactionBatch (GreaseResult ())
+    | ResolveTransaction Int Bool
+    | OnResolveTransaction (GreaseResult ())
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -84,8 +94,14 @@ update msg model =
         OnLoadFees feesResult ->
             ( { model | fees = resultToRemote feesResult }, Cmd.none )
 
+        OnLoadTransactions result ->
+            ( { model | transactions = resultToRemote result }, Cmd.none )
+
         OnUpdateFee result ->
-            ( { model | state = resultToSubmissionState result }, Cmd.none )
+            ( { model | feeState = resultToSubmissionState result }, Cmd.none )
+
+        OnResolveTransaction result ->
+            ( { model | transactionState = resultToSubmissionState result }, Cmd.none )
 
         ChangeTab tab ->
             ( { model | tab = tab }, Cmd.none )
@@ -117,7 +133,7 @@ update msg model =
                     in
                     ( { model
                         | fees = model.fees |> mapLoaded (List.map feeMapper)
-                        , state = Sending
+                        , feeState = Sending
                       }
                     , updateFeeAmount model.common updatedFee
                     )
@@ -165,6 +181,22 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        ResolveTransaction transactionId resolved ->
+            let
+                mapper transaction =
+                    if transaction.id == transactionId then
+                        { transaction | resolved = resolved }
+
+                    else
+                        transaction
+            in
+            ( { model
+                | transactions = model.transactions |> mapLoaded (List.map mapper)
+                , transactionState = Sending
+              }
+            , resolveTransaction model.common transactionId resolved
+            )
+
 
 
 ---- DATA ----
@@ -174,6 +206,30 @@ loadFees : Common -> Cmd Msg
 loadFees common =
     getRequest common "/fees" (Decode.list feeDecoder)
         |> Task.attempt OnLoadFees
+
+
+loadTransactions : Common -> Cmd Msg
+loadTransactions common =
+    getRequest common "/transactions" (Decode.list transactionDecoder)
+        |> Task.attempt OnLoadTransactions
+
+
+resolveTransaction : Common -> Int -> Bool -> Cmd Msg
+resolveTransaction common transactionId resolved =
+    let
+        url =
+            "/transactions/"
+                ++ String.fromInt transactionId
+                ++ "/resolve/"
+                ++ (if resolved then
+                        "true"
+
+                    else
+                        "false"
+                   )
+    in
+    postRequest common url (Encode.object [])
+        |> Task.attempt OnResolveTransaction
 
 
 updateFeeAmount : Common -> Fee -> Cmd Msg
@@ -221,11 +277,20 @@ view : Model -> Html Msg
 view model =
     div []
         [ Basics.title "Dues"
-        , Basics.box
-            [ model.fees |> Basics.remoteContent feeList
-            , Basics.submissionStateBox model.state
+        , Basics.columns
+            [ Basics.column
+                [ Basics.box
+                    [ model.fees |> Basics.remoteContent feeList
+                    , Basics.submissionStateBox model.feeState
+                    ]
+                ]
+            , Basics.column [ feeActionButtons ]
             ]
-        , actionButtons
+        , Basics.title "Transactions"
+        , Basics.box
+            [ model.transactions
+                |> Basics.remoteContent (transactionTable model.common model.transactionState)
+            ]
         , case model.tab of
             Nothing ->
                 text ""
@@ -241,8 +306,8 @@ view model =
         ]
 
 
-actionButtons : Html Msg
-actionButtons =
+feeActionButtons : Html Msg
+feeActionButtons =
     let
         actionButton buttonText tab =
             button
@@ -291,6 +356,58 @@ singleFee fee =
                 []
             ]
         ]
+
+
+transactionTable : Common -> SubmissionState -> List Transaction -> Html Msg
+transactionTable common state transactions =
+    div []
+        [ table [ class "table is-striped is-hoverable is-fullwidth" ]
+            [ tbody []
+                (transactions
+                    |> List.sortBy (.time >> posixToMillis >> (*) -1)
+                    |> List.map
+                        (\transaction ->
+                            tr [ class "no-bottom-border" ]
+                                (transactionRow common transaction
+                                    |> List.map (\cell -> td [] [ cell ])
+                                )
+                        )
+                )
+            ]
+        , Basics.submissionStateBox state
+        ]
+
+
+transactionRow : Common -> Transaction -> List (Html Msg)
+transactionRow common transaction =
+    let
+        ( statusText, actionButton ) =
+            if transaction.resolved then
+                ( "Resolved"
+                , button
+                    [ class "button is-small"
+                    , onClick (ResolveTransaction transaction.id False)
+                    ]
+                    [ text "Unresolve" ]
+                )
+
+            else
+                ( "Outstanding"
+                , button
+                    [ class "button is-small is-primary"
+                    , onClick (ResolveTransaction transaction.id True)
+                    ]
+                    [ text "Resolve" ]
+                )
+    in
+    [ text (transaction.time |> Datetime.simpleDateWithYearFormatter common.timeZone)
+    , transaction.member |> Utils.getMemberName common
+    , text transaction.type_
+    , text (transaction.amount |> String.fromInt)
+    , text statusText
+    , actionButton
+    , text transaction.description
+    ]
 
 
 beholdThe : String -> Html Msg

@@ -9,6 +9,7 @@ module Models.Info exposing
     , Role
     , Semester
     , StorageType(..)
+    , Transaction
     , Uniform
     , documentLinkDecoder
     , enrollmentDecoder
@@ -23,6 +24,7 @@ module Models.Info exposing
     , roleDecoder
     , semesterDecoder
     , storageTypeDecoder
+    , transactionDecoder
     , uniformDecoder
     )
 
@@ -251,3 +253,28 @@ semesterDecoder =
         |> required "endDate" posixDecoder
         |> required "gigRequirement" int
         |> required "current" bool
+
+
+type alias Transaction =
+    { id : Int
+    , member : String
+    , time : Posix
+    , amount : Int
+    , description : String
+    , semester : Maybe String
+    , type_ : String
+    , resolved : Bool
+    }
+
+
+transactionDecoder : Decoder Transaction
+transactionDecoder =
+    Decode.succeed Transaction
+        |> required "id" int
+        |> required "member" string
+        |> required "time" posixDecoder
+        |> required "amount" int
+        |> required "description" string
+        |> optional "semester" (nullable string) Nothing
+        |> required "type" string
+        |> required "resolved" bool

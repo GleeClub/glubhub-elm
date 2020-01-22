@@ -26,6 +26,14 @@ table.is-fullwidth.is-hoverable:hover {
   border-color: #b4a46a;
 }
 
+.placeholder {
+  width: 250px;
+  height: 250px;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-image: url('../public/placeholder.png');
+}
+
 html,
 body,
 #app {

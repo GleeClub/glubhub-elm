@@ -1,13 +1,11 @@
 module Page.Roster exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Html exposing (Html, a, div, h1, img, section, table, tbody, td, text, thead, tr)
-import Html.Attributes exposing (class, href, id, src)
-import Http
-import Json.Decode as Decode
-import Models.Event exposing (Member, memberDecoder)
-import Route exposing (Route)
-import Utils exposing (Common, RemoteData(..), apiUrl, fullName, formatPhone)
+import Html exposing (Html, a, div, section, table, tbody, td, text, thead, tr)
+import Html.Attributes exposing (class, href)
+import Models.Event exposing (Member)
+import Route
+import Utils exposing (Common, RemoteData(..), formatPhone, fullName)
 
 
 
@@ -15,13 +13,12 @@ import Utils exposing (Common, RemoteData(..), apiUrl, fullName, formatPhone)
 
 
 type alias Model =
-    { common : Common
-    }
+    Common
 
 
 init : Common -> ( Model, Cmd Msg )
 init common =
-    ( { common = common }, Cmd.none )
+    ( common, Cmd.none )
 
 
 
@@ -33,7 +30,7 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update _ model =
     ( model, Cmd.none )
 
 
@@ -46,7 +43,7 @@ view model =
     section [ class "section" ]
         [ div [ class "container" ]
             [ Basics.box
-                [ memberTable model.common.members ]
+                [ memberTable model.members ]
             ]
         ]
 

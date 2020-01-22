@@ -11,9 +11,11 @@ port module Utils exposing
     , eventIsOver
     , formatPhone
     , fullName
+    , getMemberName
     , getRequest
     , goldColor
     , handleJsonResponse
+    , isActiveClass
     , isLoadingClass
     , isPrimaryClass
     , mapLoaded
@@ -27,7 +29,9 @@ port module Utils exposing
     , resultToRemote
     , resultToSubmissionState
     , romanNumeral
+    , roundToTwoDigits
     , scrollToElement
+    , setOldToken
     , setToken
     , submissionStateBoxId
     , timeout
@@ -36,12 +40,13 @@ port module Utils exposing
 import Browser.Navigation as Nav
 import Color exposing (Color)
 import Error exposing (GreaseError, parseResponse)
-import Html exposing (Html)
+import Html exposing (Html, i, text)
 import Html.Parser
 import Html.Parser.Util
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
+import List.Extra exposing (find)
 import Models.Event exposing (Event, Member)
 import Models.Info exposing (Info, Semester)
 import Task exposing (Task)
@@ -299,6 +304,11 @@ romanNumeral n =
             String.fromInt n
 
 
+roundToTwoDigits : Float -> Float
+roundToTwoDigits x =
+    toFloat (round (x * 100.0)) / 100.0
+
+
 permittedTo : String -> Member -> Bool
 permittedTo permission user =
     user.permissions |> List.any (\p -> p.name == permission)
@@ -314,6 +324,14 @@ fullName member =
     firstName ++ " " ++ member.lastName
 
 
+getMemberName : Common -> String -> Html msg
+getMemberName common email =
+    common.members
+        |> find (\member -> member.email == email)
+        |> Maybe.map (fullName >> text)
+        |> Maybe.withDefault (i [] [ text email ])
+
+
 isLoadingClass : Bool -> String
 isLoadingClass isLoading =
     if isLoading then
@@ -327,6 +345,15 @@ isPrimaryClass : Bool -> String
 isPrimaryClass isPrimary =
     if isPrimary then
         " is-primary"
+
+    else
+        ""
+
+
+isActiveClass : Bool -> String
+isActiveClass isActive =
+    if isActive then
+        " is-active"
 
     else
         ""
@@ -352,6 +379,9 @@ optionalSingleton shouldRender content =
 
 
 port setToken : Maybe String -> Cmd msg
+
+
+port setOldToken : Maybe String -> Cmd msg
 
 
 port alert : String -> Cmd msg

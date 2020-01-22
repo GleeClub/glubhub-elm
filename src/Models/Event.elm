@@ -305,3 +305,20 @@ memberRoleDecoder =
     Decode.succeed MemberRole
         |> required "member" memberDecoder
         |> required "role" roleDecoder
+
+
+type alias ActiveSemester =
+    { semester : String
+    , enrollment : Maybe Enrollment
+    , section : Maybe String
+    , grades : Grades
+    }
+
+
+activeSemesterDecoder : Decoder ActiveSemester
+activeSemesterDecoder =
+    Decode.succeed ActiveSemester
+        |> required "semester" string
+        |> required "enrollment" enrollmentDecoder
+        |> optional "section" (nullable string) Nothing
+        |> required "grades" gradesDecoder

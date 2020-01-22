@@ -7,6 +7,7 @@ import pell from './pell.min'
 import * as serviceWorker from './serviceWorker'
 
 const tokenName = 'grease-token'
+const oldTokenName = 'old-grease-token'
 
 var storedState = localStorage.getItem(tokenName)
 var app = Elm.Main.init({
@@ -19,7 +20,20 @@ app.ports.setToken.subscribe(function(token) {
   if (token) {
     localStorage.setItem(tokenName, token)
   } else {
-    localStorage.removeItem(tokenName)
+    const oldToken = localStorage.getItem(oldTokenName)
+    if (oldToken) {
+      localStorage.removeItem(oldTokenName)
+      localStorage.setItem(tokenName, oldToken)
+    } else {
+      localStorage.removeItem(tokenName)
+    }
+  }
+})
+app.ports.setOldToken.subscribe(function(oldToken) {
+  if (oldToken) {
+    localStorage.setItem(oldTokenName, oldToken)
+  } else {
+    localStorage.removeItem(oldTokenName)
   }
 })
 app.ports.alert.subscribe(function(alertMessage) {
