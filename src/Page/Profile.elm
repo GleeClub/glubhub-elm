@@ -3,20 +3,26 @@ module Page.Profile exposing (Model, Msg(..), init, update, view)
 import Browser.Navigation exposing (reload)
 import Components.Basics as Basics
 import Components.DeleteModal exposing (deleteModal)
+import Components.Forms exposing (checkboxInput, numberInput)
 import Datetime
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, div, h1, i, img, li, p, section, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (class, style)
-import Html.Events exposing (onClick)
+import Html exposing (Html, a, b, br, div, h1, i, img, input, li, p, section, span, table, tbody, td, text, th, thead, tr, ul)
+import Html.Attributes exposing (class, placeholder, style, type_, value)
+import Html.Events exposing (onClick, onInput)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import List.Extra
 import Models.Event
     exposing
         ( ActiveSemester
+        , Event
         , GradeChange
         , Member
+        , SimpleAttendance
         , activeSemesterDecoder
+        , defaultSimpleAttendance
         , eventAttendeeDecoder
+        , eventDecoder
         , gradeChangeDecoder
         , memberDecoder
         )
@@ -25,7 +31,7 @@ import Permissions
 import Route
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, fullName, getRequest, isActiveClass, mapLoaded, resultToRemote, roundToTwoDigits, setOldToken, setToken)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, fullName, getRequest, isActiveClass, mapLoaded, postRequest, resultToRemote, roundToTwoDigits, setOldToken, setToken)
 
 
 
@@ -43,7 +49,7 @@ type alias Model =
 type ProfileTab
     = ProfileDetails (Maybe ProfileDetailsData)
     | ProfileMoney (RemoteData (List Transaction))
-    | ProfileAttendance (RemoteData (List GradeChange))
+    | ProfileAttendance (RemoteData (List Event))
     | ProfileSemesters (RemoteData (List ActiveSemester))
 
 
@@ -131,6 +137,8 @@ type Msg
     | ChangeTab ProfileTab
     | OnLoadMemberTransactions (GreaseResult (List Transaction))
     | OnLoadSemesters (GreaseResult (List ActiveSemester))
+    | OnLoadAttendance (GreaseResult (List Event))
+    | UpdateEventAttendance Int SimpleAttendance
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -187,7 +195,7 @@ update msg model =
                             loadSemesters model.common member
 
                         ProfileAttendance _ ->
-                            Cmd.none
+                            loadAttendance model.common member
                     )
 
                 _ ->
@@ -205,6 +213,38 @@ update msg model =
             case model.member of
                 Loaded ( member, ProfileSemesters _ ) ->
                     ( { model | member = Loaded ( member, ProfileSemesters (result |> resultToRemote) ) }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        OnLoadAttendance result ->
+            case model.member of
+                Loaded ( member, ProfileAttendance _ ) ->
+                    ( { model | member = Loaded ( member, ProfileAttendance (result |> resultToRemote) ) }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        UpdateEventAttendance eventId attendance ->
+            case model.member of
+                Loaded ( member, ProfileAttendance events ) ->
+                    let
+                        eventMapper event =
+                            if event.id == eventId then
+                                { event | attendance = Just attendance }
+
+                            else
+                                event
+                    in
+                    ( { model
+                        | member =
+                            Loaded
+                                ( member
+                                , ProfileAttendance (events |> mapLoaded (List.map eventMapper))
+                                )
+                      }
+                    , updateAttendance model.common eventId member.email attendance
+                    )
 
                 _ ->
                     ( model, Cmd.none )
@@ -263,6 +303,37 @@ loadSemesters common member =
     in
     getRequest common url decoder
         |> Task.attempt OnLoadSemesters
+
+
+loadAttendance : Common -> Member -> Cmd Msg
+loadAttendance common member =
+    let
+        url =
+            "/events?full=true"
+    in
+    getRequest common url (Decode.list eventDecoder)
+        |> Task.attempt OnLoadAttendance
+
+
+updateAttendance : Common -> Int -> String -> SimpleAttendance -> Cmd Msg
+updateAttendance common eventId email attendance =
+    let
+        url =
+            "/events/" ++ String.fromInt eventId ++ "/attendance/" ++ email
+    in
+    postRequest common url (serializeAttendance attendance)
+        |> Task.andThen (\_ -> getRequest common "/events?full=true" (Decode.list eventDecoder))
+        |> Task.attempt OnLoadAttendance
+
+
+serializeAttendance : SimpleAttendance -> Encode.Value
+serializeAttendance attendance =
+    Encode.object
+        [ ( "shouldAttend", Encode.bool attendance.shouldAttend )
+        , ( "didAttend", Encode.bool attendance.didAttend )
+        , ( "confirmed", Encode.bool attendance.confirmed )
+        , ( "minutesLate", Encode.int attendance.minutesLate )
+        ]
 
 
 
@@ -417,8 +488,8 @@ viewProfileTab model ( member, tab ) =
             ProfileSemesters data ->
                 data |> Basics.remoteContent profileSemesters
 
-            ProfileAttendance _ ->
-                text ""
+            ProfileAttendance data ->
+                data |> Basics.remoteContent (profileAttendance model.common)
         ]
 
 
@@ -615,4 +686,97 @@ profileSemesters semesters =
             [ headerRow ]
         , tbody []
             (semesters |> List.map semesterRow)
+        ]
+
+
+profileAttendance : Common -> List Event -> Html Msg
+profileAttendance common events =
+    let
+        headerRow =
+            tr []
+                ([ "Date"
+                 , "Event"
+                 , "Type"
+                 , "Should Attend?"
+                 , "Did Attend?"
+                 , "Mins Late"
+                 , "Point Change"
+                 , "PartialScore"
+                 , "Rationale"
+                 ]
+                    |> List.map (\column -> th [] [ text column ])
+                )
+
+        finalGrade =
+            events
+                |> List.filterMap .gradeChange
+                |> List.Extra.last
+                |> Maybe.map .partialScore
+                |> Maybe.withDefault 100.0
+
+        eventRow event =
+            tr [ class "no-bottom-border" ]
+                (eventRowValues event
+                    |> List.map (\cell -> td [] [ cell ])
+                )
+
+        eventRowValues event =
+            let
+                attendance =
+                    event.attendance
+                        |> Maybe.withDefault { defaultSimpleAttendance | shouldAttend = event.defaultAttend }
+            in
+            [ text (event.callTime |> Datetime.dateFormatter common.timeZone)
+            , a [ Route.href <| Route.Events { id = Just event.id, tab = Nothing } ] [ text event.name ]
+            , text event.type_
+            , checkboxInput
+                { content = ""
+                , isChecked = attendance.shouldAttend
+                , onChange = \shouldAttend -> UpdateEventAttendance event.id { attendance | shouldAttend = shouldAttend }
+                }
+            , checkboxInput
+                { content = ""
+                , isChecked = attendance.didAttend
+                , onChange = \didAttend -> UpdateEventAttendance event.id { attendance | didAttend = didAttend }
+                }
+            , input
+                [ class "input"
+                , type_ "number"
+                , placeholder "0"
+                , value (attendance.minutesLate |> String.fromInt)
+                , onInput
+                    (\minutesLate ->
+                        UpdateEventAttendance event.id
+                            { attendance
+                                | minutesLate =
+                                    minutesLate
+                                        |> String.toInt
+                                        |> Maybe.withDefault 0
+                            }
+                    )
+                ]
+                []
+            , text
+                (event.gradeChange
+                    |> Maybe.map (.change >> roundToTwoDigits >> String.fromFloat)
+                    |> Maybe.withDefault "0"
+                )
+            , text
+                (event.gradeChange
+                    |> Maybe.map (.partialScore >> roundToTwoDigits)
+                    |> Maybe.withDefault finalGrade
+                    |> String.fromFloat
+                )
+            , text
+                (event.gradeChange
+                    |> Maybe.map .reason
+                    |> Maybe.withDefault ""
+                )
+            ]
+    in
+    table [ class "table" ]
+        [ thead []
+            [ headerRow ]
+        , tbody []
+            (events |> List.map eventRow)
         ]

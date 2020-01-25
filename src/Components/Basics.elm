@@ -4,6 +4,7 @@ module Components.Basics exposing
     , attendanceIcon
     , backTextButton
     , box
+    , centeredTitle
     , checkOrCross
     , column
     , columns
@@ -56,6 +57,11 @@ notFoundView =
 
 title : String -> Html msg
 title content =
+    h1 [ class "title" ] [ text content ]
+
+
+centeredTitle : String -> Html msg
+centeredTitle content =
     h1 [ class "title", style "text-align" "center" ] [ text content ]
 
 

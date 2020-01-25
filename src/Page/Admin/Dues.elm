@@ -361,7 +361,7 @@ singleFee fee =
 transactionTable : Common -> SubmissionState -> List Transaction -> Html Msg
 transactionTable common state transactions =
     div []
-        [ table [ class "table is-striped is-hoverable is-fullwidth" ]
+        [ table [ class "table is-striped is-fullwidth" ]
             [ tbody []
                 (transactions
                     |> List.sortBy (.time >> posixToMillis >> (*) -1)

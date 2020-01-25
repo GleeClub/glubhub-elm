@@ -109,7 +109,9 @@ view model =
                 \events ->
                     let
                         ( pastEvents, futureEvents ) =
-                            events |> List.partition (eventIsOver model.common)
+                            events
+                                |> List.partition (eventIsOver model.common)
+                                |> Tuple.mapFirst (List.filter (\event -> isJust event.gradeChange))
 
                         maybeGrades =
                             model.common.user |> Maybe.andThen .grades

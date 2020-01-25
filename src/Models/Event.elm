@@ -136,6 +136,19 @@ attendanceDecoder =
         |> required "minutesLate" int
 
 
+type alias EventAttendance =
+    { event : Event
+    , attendance : SimpleAttendance
+    }
+
+
+eventAttendanceDecoder : Decoder EventAttendance
+eventAttendanceDecoder =
+    Decode.succeed EventAttendance
+        |> required "event" eventDecoder
+        |> required "attendance" simpleAttendanceDecoder
+
+
 type alias EventAttendee =
     { member : Member
     , attendance : SimpleAttendance
@@ -164,6 +177,15 @@ simpleAttendanceDecoder =
         |> required "didAttend" bool
         |> required "confirmed" bool
         |> required "minutesLate" int
+
+
+defaultSimpleAttendance : SimpleAttendance
+defaultSimpleAttendance =
+    { shouldAttend = False
+    , didAttend = False
+    , confirmed = False
+    , minutesLate = 0
+    }
 
 
 type alias EventCarpool =

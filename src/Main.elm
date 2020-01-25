@@ -224,8 +224,18 @@ loadCurrentPage model =
                     ( Just Route.Roster, _ ) ->
                         Page.Roster.init common |> updateWith PageRoster RosterMsg model
 
-                    ( Just (Route.Profile _), Just (PageProfile _) ) ->
-                        ( model, Cmd.none )
+                    ( Just (Route.Profile newEmail), Just (PageProfile profileModel) ) ->
+                        -- Don't reload the page if the same member is already loaded
+                        if
+                            profileModel.member
+                                |> remoteToMaybe
+                                |> Maybe.map (\( member, _ ) -> member.email == newEmail)
+                                |> Maybe.withDefault True
+                        then
+                            ( model, Cmd.none )
+
+                        else
+                            Page.Profile.init common newEmail |> updateWith PageProfile ProfileMsg model
 
                     ( Just (Route.Profile email), _ ) ->
                         Page.Profile.init common email |> updateWith PageProfile ProfileMsg model
