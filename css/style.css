@@ -52,6 +52,14 @@ div.container.fullheight div.columns {
   height: 100%;
 }
 
+a.button.is-primary:not(.is-outlined) {
+  color: white;
+}
+
+button.button.is-primary:not(.is-outlined) {
+  color: white;
+}
+
 div.spinner {
   width: 100%;
   height: 100%;

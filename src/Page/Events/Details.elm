@@ -7,7 +7,6 @@ import Error exposing (GreaseError, GreaseResult)
 import Html exposing (Html, a, b, br, button, div, i, p, span, text, u)
 import Html.Attributes exposing (attribute, class, href, style, target)
 import Html.Events exposing (onClick)
-import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (find)
 import Maybe.Extra exposing (isJust, isNothing)
@@ -16,7 +15,7 @@ import Models.Info exposing (Uniform)
 import Models.Permissions as Permissions
 import Route exposing (EventTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, postRequestFull)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, isLoadingClass, postRequest)
 
 
 
@@ -60,6 +59,7 @@ type Msg
 
 type InternalMsg
     = Rsvp Bool
+    | ConfirmAttending
     | OnRsvp (GreaseResult Bool)
     | TryToDeleteEvent
     | CancelDeleteEvent
@@ -106,6 +106,9 @@ update msg model =
     case msg of
         Rsvp attending ->
             ( { model | state = Sending }, rsvp model.common model.event.id attending )
+
+        ConfirmAttending ->
+            ( { model | state = Sending }, confirm model.common model.event.id )
 
         OnRsvp (Err error) ->
             ( { model | state = ErrorSending error }, Cmd.none )
@@ -160,8 +163,31 @@ rsvp common eventId attending =
         emptyBody =
             Encode.object []
     in
-    Utils.postRequestFull common url emptyBody (Decode.succeed attending)
-        |> Task.attempt (ForSelf << OnRsvp)
+    Utils.postRequest common url emptyBody
+        |> Task.attempt
+            (\result ->
+                ForSelf <|
+                    OnRsvp
+                        (result |> Result.map (\_ -> attending))
+            )
+
+
+confirm : Common -> Int -> Cmd Msg
+confirm common eventId =
+    let
+        url =
+            "/events/" ++ String.fromInt eventId ++ "/confirm"
+
+        emptyBody =
+            Encode.object []
+    in
+    postRequest common url emptyBody
+        |> Task.attempt
+            (\result ->
+                ForSelf <|
+                    OnRsvp
+                        (result |> Result.map (\_ -> True))
+            )
 
 
 deleteEvent : Common -> Int -> Cmd Msg
@@ -188,7 +214,7 @@ view model =
                     (\comments ->
                         p [] [ text comments, br [] [], br [] [] ]
                     )
-            , [ attendanceBlock model ]
+            , [ span [] <| attendanceBlock model ]
             , model.event.gig
                 |> Maybe.map .performanceTime
                 |> maybeToList
@@ -258,20 +284,34 @@ rsvpIssueSection issue =
     p [ class "has-text-grey-light is-italic" ] [ text issue ]
 
 
-attendanceBlock : Model -> Html Msg
+attendanceBlock : Model -> List (Html Msg)
 attendanceBlock model =
     case ( model.event.attendance, model.event.rsvpIssue, model.event |> eventIsOver model.common ) of
         ( Just attendance, _, True ) ->
-            span [] <| attendanceSummary model.event.points attendance
+            attendanceSummary model.event.points attendance
 
-        ( _, Just issue, False ) ->
-            span [] <| [ rsvpIssueSection issue ]
+        ( attendance, Just issue, False ) ->
+            if [ "Sectional", "Tutti Gig", "Rehearsal" ] |> List.any ((==) model.event.type_) then
+                if attendance |> Maybe.map .confirmed |> Maybe.withDefault False then
+                    [ text "We know you're coming." ]
+
+                else
+                    [ p [] [ text "You're coming, right?" ]
+                    , button
+                        [ class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
+                        , onClick <| ForSelf <| ConfirmAttending
+                        ]
+                        [ text "yep, I'll be there" ]
+                    ]
+
+            else
+                [ rsvpIssueSection issue ]
 
         ( Just attendance, Nothing, False ) ->
-            span [] <| (attendance |> rsvpActions (model.state == Sending))
+            attendance |> rsvpActions (model.state == Sending)
 
         ( Nothing, _, _ ) ->
-            span [] []
+            []
 
 
 rsvpActions : Bool -> SimpleAttendance -> List (Html Msg)
@@ -401,7 +441,7 @@ officerInfoSection model =
                 [ text "Edit this bitch" ]
             , br [] []
             , button
-                [ class "button is-danger"
+                [ class "button is-danger is-outlined"
                 , onClick (ForSelf TryToDeleteEvent)
                 ]
                 [ text "Baleet this bitch" ]
