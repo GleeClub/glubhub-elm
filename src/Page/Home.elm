@@ -8,9 +8,9 @@ import Html exposing (Html, a, br, div, em, i, p, section, span, strong, text)
 import Html.Attributes exposing (class, href, id, style)
 import Json.Decode as Decode
 import List.Extra exposing (last)
-import Maybe.Extra exposing (filter, isJust)
-import Models.Event exposing (Event, Grades, eventDecoder)
-import Models.Info exposing (Semester)
+import Maybe.Extra exposing (filter, isJust, isNothing)
+import Models.Event exposing (Event, eventDecoder)
+import Models.Info exposing (Enrollment)
 import Route
 import Task
 import Time exposing (Zone)
@@ -78,24 +78,22 @@ loadEvents common =
         |> Task.attempt OnLoadEvents
 
 
-attendanceMessage : Maybe Grades -> String
-attendanceMessage maybeGrades =
-    case maybeGrades of
-        Nothing ->
-            "Do you even go here?"
+attendanceMessage : Maybe Enrollment -> Float -> String
+attendanceMessage enrollment finalGrade =
+    if isNothing enrollment then
+        "Do you even go here?"
 
-        Just grades ->
-            if grades.finalGrade >= 90.0 then
-                "Ayy lamo nice."
+    else if finalGrade >= 90.0 then
+        "Ayy lamo nice."
 
-            else if grades.finalGrade >= 80.0 then
-                "Ok not bad, I guess."
+    else if finalGrade >= 80.0 then
+        "Ok not bad, I guess."
 
-            else if grades.finalGrade >= 70.0 then
-                "Pls"
+    else if finalGrade >= 70.0 then
+        "Pls"
 
-            else
-                "BRUH get it together."
+    else
+        "BRUH get it together."
 
 
 
@@ -113,16 +111,11 @@ view model =
                                 |> List.partition (eventIsOver model.common)
                                 |> Tuple.mapFirst (List.filter (\event -> isJust event.gradeChange))
 
-                        maybeGrades =
-                            model.common.user |> Maybe.andThen .grades
-
                         gigRequirement =
-                            maybeGrades
-                                |> Maybe.map .gigRequirement
-                                |> Maybe.withDefault 5
+                            model.common.currentSemester.gigRequirement
                     in
                     div []
-                        [ gradesBlock model.common.currentSemester maybeGrades pastEvents
+                        [ gradesBlock model.common pastEvents
                         , eventHoverBox model.common model.hoveredEvent
                         , section [ class "section" ]
                             [ div [ class "container" ]
@@ -136,8 +129,8 @@ view model =
            )
 
 
-gradesBlock : Semester -> Maybe Grades -> List Event -> Html Msg
-gradesBlock semester grades pastEvents =
+gradesBlock : Common -> List Event -> Html Msg
+gradesBlock common pastEvents =
     let
         finalGrade =
             pastEvents
@@ -149,6 +142,10 @@ gradesBlock semester grades pastEvents =
         attendanceIssueEmail =
             "mailto:gleeclub_officers@lists.gatech.edu?subject=Attendance%20Issue"
 
+        enrollment =
+            common.user
+                |> Maybe.andThen .enrollment
+
         scoreText =
             p []
                 [ text "Right now you have a "
@@ -156,7 +153,7 @@ gradesBlock semester grades pastEvents =
                 , text "."
                 , br [] []
                 , span [ class "has-text-grey-light is-italic" ]
-                    [ text <| attendanceMessage grades ]
+                    [ text <| attendanceMessage enrollment finalGrade ]
                 ]
 
         graph =
@@ -167,7 +164,7 @@ gradesBlock semester grades pastEvents =
                 ]
 
             else
-                [ graphGrades semester pastEvents HoverOverEvent
+                [ graphGrades common.currentSemester pastEvents HoverOverEvent
                 , p [ id "attendance-issue" ]
                     [ br [] []
                     , text "Do you have an issue? Do you need a daddy tissue? "

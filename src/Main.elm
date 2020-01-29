@@ -495,7 +495,7 @@ view model =
             not model.ignoredConfirmPrompt
                 && commonIsLoaded
                 && (maybeUser
-                        |> Maybe.map (\u -> isNothing u.grades)
+                        |> Maybe.map (\u -> isNothing u.enrollment)
                         |> Maybe.withDefault False
                    )
 

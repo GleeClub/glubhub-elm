@@ -171,7 +171,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnSendTransactionBatch (Ok _) ->
-            ( { model | tab = Nothing }, Cmd.none )
+            ( { model | tab = Nothing, transactions = Loading }, loadTransactions model.common )
 
         OnSendTransactionBatch (Err error) ->
             case model.tab of

@@ -213,10 +213,8 @@ type alias UpdatedCarpool =
 
 
 type alias Grades =
-    { finalGrade : Float
+    { grade : Float
     , volunteerGigsAttended : Int
-    , gigRequirement : Int
-    , semesterIsFinished : Bool
     , changes : List GradeChange
     }
 
@@ -224,16 +222,14 @@ type alias Grades =
 gradesDecoder : Decoder Grades
 gradesDecoder =
     Decode.succeed Grades
-        |> required "finalGrade" float
+        |> required "grade" float
         |> required "volunteerGigsAttended" int
-        |> required "gigRequirement" int
-        |> required "semesterIsFinished" bool
         |> required "changes" (Decode.list gradeChangeDecoder)
 
 
 type alias GradeChange =
     { event : Event
-    , attendance : Attendance
+    , attendance : SimpleAttendance
     , reason : String
     , change : Float
     , partialScore : Float
@@ -244,7 +240,7 @@ gradeChangeDecoder : Decoder GradeChange
 gradeChangeDecoder =
     Decode.succeed GradeChange
         |> required "event" eventDecoder
-        |> required "attendance" attendanceDecoder
+        |> required "attendance" simpleAttendanceDecoder
         |> required "reason" string
         |> required "change" float
         |> required "partialScore" float
@@ -272,7 +268,6 @@ type alias Member =
     , enrollment : Maybe Enrollment
     , permissions : List MemberPermission
     , positions : List String
-    , grades : Maybe Grades
     }
 
 
@@ -300,7 +295,6 @@ memberDecoder =
         |> optional "enrollment" enrollmentDecoder Nothing
         |> optional "permissions" (Decode.list memberPermissionDecoder) []
         |> optional "positions" (Decode.list string) []
-        |> optional "grades" (nullable gradesDecoder) Nothing
 
 
 type alias MemberPermission =

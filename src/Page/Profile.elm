@@ -3,9 +3,9 @@ module Page.Profile exposing (Model, Msg(..), init, update, view)
 import Browser.Navigation exposing (reload)
 import Components.Basics as Basics
 import Components.DeleteModal exposing (deleteModal)
-import Components.Forms exposing (checkboxInput, numberInput)
+import Components.Forms exposing (checkboxInput)
 import Datetime
-import Error exposing (GreaseResult)
+import Error exposing (GreaseError, GreaseResult)
 import Html exposing (Html, a, b, br, div, h1, i, img, input, li, p, section, span, table, tbody, td, text, th, thead, tr, ul)
 import Html.Attributes exposing (class, placeholder, style, type_, value)
 import Html.Events exposing (onClick, onInput)
@@ -15,15 +15,11 @@ import List.Extra
 import Models.Event
     exposing
         ( ActiveSemester
-        , Event
-        , GradeChange
+        , Grades
         , Member
         , SimpleAttendance
         , activeSemesterDecoder
-        , defaultSimpleAttendance
-        , eventAttendeeDecoder
-        , eventDecoder
-        , gradeChangeDecoder
+        , gradesDecoder
         , memberDecoder
         )
 import Models.Info exposing (Enrollment(..), Transaction, enrollmentToString, transactionDecoder)
@@ -49,7 +45,7 @@ type alias Model =
 type ProfileTab
     = ProfileDetails (Maybe ProfileDetailsData)
     | ProfileMoney (RemoteData (List Transaction))
-    | ProfileAttendance (RemoteData (List Event))
+    | ProfileAttendance (RemoteData Grades)
     | ProfileSemesters (RemoteData (List ActiveSemester))
 
 
@@ -137,7 +133,7 @@ type Msg
     | ChangeTab ProfileTab
     | OnLoadMemberTransactions (GreaseResult (List Transaction))
     | OnLoadSemesters (GreaseResult (List ActiveSemester))
-    | OnLoadAttendance (GreaseResult (List Event))
+    | OnLoadAttendance (GreaseResult Grades)
     | UpdateEventAttendance Int SimpleAttendance
 
 
@@ -196,6 +192,7 @@ update msg model =
 
                         ProfileAttendance _ ->
                             loadAttendance model.common member
+                                |> Task.attempt OnLoadAttendance
                     )
 
                 _ ->
@@ -227,23 +224,26 @@ update msg model =
 
         UpdateEventAttendance eventId attendance ->
             case model.member of
-                Loaded ( member, ProfileAttendance events ) ->
+                Loaded ( member, ProfileAttendance grades ) ->
                     let
-                        eventMapper event =
-                            if event.id == eventId then
-                                { event | attendance = Just attendance }
+                        gradeChangeMapper gradeChange =
+                            if gradeChange.event.id == eventId then
+                                { gradeChange | attendance = attendance }
 
                             else
-                                event
+                                gradeChange
                     in
                     ( { model
                         | member =
                             Loaded
                                 ( member
-                                , ProfileAttendance (events |> mapLoaded (List.map eventMapper))
+                                , ProfileAttendance
+                                    (grades
+                                        |> mapLoaded (\g -> { g | changes = g.changes |> List.map gradeChangeMapper })
+                                    )
                                 )
                       }
-                    , updateAttendance model.common eventId member.email attendance
+                    , updateAttendance model.common eventId member attendance
                     )
 
                 _ ->
@@ -305,24 +305,23 @@ loadSemesters common member =
         |> Task.attempt OnLoadSemesters
 
 
-loadAttendance : Common -> Member -> Cmd Msg
+loadAttendance : Common -> Member -> Task.Task GreaseError Grades
 loadAttendance common member =
     let
         url =
-            "/events?full=true"
+            "/members/" ++ member.email ++ "?grades=true"
     in
-    getRequest common url (Decode.list eventDecoder)
-        |> Task.attempt OnLoadAttendance
+    getRequest common url (Decode.field "grades" gradesDecoder)
 
 
-updateAttendance : Common -> Int -> String -> SimpleAttendance -> Cmd Msg
-updateAttendance common eventId email attendance =
+updateAttendance : Common -> Int -> Member -> SimpleAttendance -> Cmd Msg
+updateAttendance common eventId member attendance =
     let
         url =
-            "/events/" ++ String.fromInt eventId ++ "/attendance/" ++ email
+            "/events/" ++ String.fromInt eventId ++ "/attendance/" ++ member.email
     in
     postRequest common url (serializeAttendance attendance)
-        |> Task.andThen (\_ -> getRequest common "/events?full=true" (Decode.list eventDecoder))
+        |> Task.andThen (\_ -> loadAttendance common member)
         |> Task.attempt OnLoadAttendance
 
 
@@ -480,7 +479,7 @@ viewProfileTab model ( member, tab ) =
         [ profileTabList tab
         , case tab of
             ProfileDetails currentForm ->
-                profileDetailsTab model.common member currentForm
+                profileDetailsTab member currentForm
 
             ProfileMoney data ->
                 data |> Basics.remoteContent (profileMoney model.common)
@@ -534,8 +533,8 @@ tabIsActive currentTab tab =
             False
 
 
-profileDetailsTab : Common -> Member -> Maybe ProfileDetailsData -> Html Msg
-profileDetailsTab common member currentForm =
+profileDetailsTab : Member -> Maybe ProfileDetailsData -> Html Msg
+profileDetailsTab member currentForm =
     case currentForm of
         Nothing ->
             readOnlyProfileDetails member
@@ -676,7 +675,7 @@ profileSemesters semesters =
                 |> Maybe.withDefault "Inactive"
             , semester.section
                 |> Maybe.withDefault "Homeless"
-            , semester.grades.finalGrade
+            , semester.grades.grade
                 |> roundToTwoDigits
                 |> String.fromFloat
             ]
@@ -689,8 +688,8 @@ profileSemesters semesters =
         ]
 
 
-profileAttendance : Common -> List Event -> Html Msg
-profileAttendance common events =
+profileAttendance : Common -> Grades -> Html Msg
+profileAttendance common grades =
     let
         headerRow =
             tr []
@@ -707,37 +706,29 @@ profileAttendance common events =
                     |> List.map (\column -> th [] [ text column ])
                 )
 
-        finalGrade =
-            events
-                |> List.filterMap .gradeChange
-                |> List.Extra.last
-                |> Maybe.map .partialScore
-                |> Maybe.withDefault 100.0
-
-        eventRow event =
+        gradeChangeRow change =
             tr [ class "no-bottom-border" ]
-                (eventRowValues event
+                (gradeChangeRowValues change
                     |> List.map (\cell -> td [] [ cell ])
                 )
 
-        eventRowValues event =
+        gradeChangeRowValues change =
             let
                 attendance =
-                    event.attendance
-                        |> Maybe.withDefault { defaultSimpleAttendance | shouldAttend = event.defaultAttend }
+                    change.attendance
             in
-            [ text (event.callTime |> Datetime.dateFormatter common.timeZone)
-            , a [ Route.href <| Route.Events { id = Just event.id, tab = Nothing } ] [ text event.name ]
-            , text event.type_
+            [ text (change.event.callTime |> Datetime.dateFormatter common.timeZone)
+            , a [ Route.href <| Route.Events { id = Just change.event.id, tab = Nothing } ] [ text change.event.name ]
+            , text change.event.type_
             , checkboxInput
                 { content = ""
                 , isChecked = attendance.shouldAttend
-                , onChange = \shouldAttend -> UpdateEventAttendance event.id { attendance | shouldAttend = shouldAttend }
+                , onChange = \shouldAttend -> UpdateEventAttendance change.event.id { attendance | shouldAttend = shouldAttend }
                 }
             , checkboxInput
                 { content = ""
                 , isChecked = attendance.didAttend
-                , onChange = \didAttend -> UpdateEventAttendance event.id { attendance | didAttend = didAttend }
+                , onChange = \didAttend -> UpdateEventAttendance change.event.id { attendance | didAttend = didAttend }
                 }
             , input
                 [ class "input"
@@ -746,7 +737,7 @@ profileAttendance common events =
                 , value (attendance.minutesLate |> String.fromInt)
                 , onInput
                     (\minutesLate ->
-                        UpdateEventAttendance event.id
+                        UpdateEventAttendance change.event.id
                             { attendance
                                 | minutesLate =
                                     minutesLate
@@ -756,27 +747,14 @@ profileAttendance common events =
                     )
                 ]
                 []
-            , text
-                (event.gradeChange
-                    |> Maybe.map (.change >> roundToTwoDigits >> String.fromFloat)
-                    |> Maybe.withDefault "0"
-                )
-            , text
-                (event.gradeChange
-                    |> Maybe.map (.partialScore >> roundToTwoDigits)
-                    |> Maybe.withDefault finalGrade
-                    |> String.fromFloat
-                )
-            , text
-                (event.gradeChange
-                    |> Maybe.map .reason
-                    |> Maybe.withDefault ""
-                )
+            , text (change.change |> String.fromFloat)
+            , text (change.partialScore |> String.fromFloat)
+            , text change.reason
             ]
     in
     table [ class "table" ]
         [ thead []
             [ headerRow ]
         , tbody []
-            (events |> List.map eventRow)
+            (grades.changes |> List.map gradeChangeRow)
         ]
