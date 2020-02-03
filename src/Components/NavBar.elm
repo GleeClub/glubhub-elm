@@ -1,11 +1,12 @@
 module Components.NavBar exposing (NavBar, navBar)
 
-import Html exposing (Html, a, div, i, nav, span, text)
+import Html exposing (Html, a, div, hr, i, nav, span, text)
 import Html.Attributes exposing (attribute, class, href, style, target)
 import Html.Events exposing (onClick)
 import Maybe.Extra exposing (isJust)
-import Route exposing (Route(..))
-import Utils exposing (Common, RemoteData(..), fullName)
+import Page.Admin exposing (tabText, visibleAdminTabs)
+import Route exposing (AdminTab(..), Route(..))
+import Utils exposing (Common, RemoteData(..), fullName, isActiveClass)
 
 
 type alias NavBar msg =
@@ -85,28 +86,18 @@ navBarLinks data =
                       , singleLink "People" Route.Roster
                       , singleLink "Minutes" <| Route.Minutes { id = Nothing, tab = Nothing }
                       , documentLinks data.common
+                      , adminLinks data.common
                       ]
-                        ++ (if List.isEmpty user.permissions then
-                                []
-
-                            else
-                                [ singleLink "Admin" <| Route.Admin Nothing ]
-                           )
-                    , [ singleLink (user |> fullName) <| Route.Profile user.email ]
+                    , [ singleLink (user |> fullName) <|
+                            Route.Profile { email = user.email, tab = Nothing }
+                      ]
                     )
 
                 Nothing ->
                     ( [], [] )
     in
     div
-        [ class <|
-            "navbar-menu"
-                ++ (if data.burgerOpened then
-                        " is-active"
-
-                    else
-                        ""
-                   )
+        [ class <| "navbar-menu" ++ isActiveClass data.burgerOpened
         ]
         [ div [ class "navbar-start" ] primaryLinks
         , div [ class "navbar-end" ] profileLink
@@ -132,3 +123,38 @@ documentLinks common =
         , div [ class "navbar-dropdown" ]
             (allDocuments |> List.map documentLink)
         ]
+
+
+adminLinks : Maybe Common -> Html msg
+adminLinks common =
+    let
+        adminTabs =
+            common
+                |> Maybe.map visibleAdminTabs
+                |> Maybe.withDefault []
+
+        adminLink tab =
+            a
+                [ class "navbar-item"
+                , Route.href <| Admin <| Just tab
+                ]
+                [ text <| tabText tab ]
+
+        divider =
+            hr [ class "navbar-divider" ] []
+    in
+    if List.isEmpty adminTabs then
+        text ""
+
+    else
+        div
+            [ class "navbar-item has-dropdown is-hoverable" ]
+            [ a [ class "navbar-link", Route.href <| Admin Nothing ]
+                [ text "Admin" ]
+            , div [ class "navbar-dropdown" ]
+                (adminTabs
+                    |> List.map (List.map adminLink)
+                    |> List.intersperse [ divider ]
+                    |> List.concat
+                )
+            ]

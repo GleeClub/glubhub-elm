@@ -2,17 +2,18 @@ module Page.Login exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
 import Components.Basics as Basics
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (textInput)
 import Error exposing (GreaseError(..), GreaseResult)
-import Html exposing (Html, button, div, form, img, text)
-import Html.Attributes exposing (class, src, style, type_)
-import Html.Events exposing (onSubmit)
+import Html exposing (Html, div, form, img)
+import Html.Attributes exposing (class, src, style)
 import Http.Detailed exposing (Error(..))
 import Json.Decode exposing (field, string)
 import Json.Encode as Encode
 import MD5
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, isLoadingClass, postRequestFull, setToken)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequestFull, setToken)
 
 
 
@@ -105,8 +106,11 @@ onSuccessfulLogin token =
 view : Model -> Html Msg
 view model =
     div [ class "container fullheight" ]
-        [ div [ class "columns is-centered is-vcentered", style "display" "flex" ]
-            [ form [ onSubmit Submit ]
+        [ div
+            [ class "columns is-centered is-vcentered"
+            , style "display" "flex"
+            ]
+            [ Basics.form Submit
                 [ Basics.narrowColumn
                     [ Basics.box
                         [ logo
@@ -127,36 +131,52 @@ logo =
 
 emailField : Model -> Html Msg
 emailField model =
-    Basics.horizontalField
-        { label = "E-mail"
-        , name = "login-email"
-        , type_ = "email"
-        , value = model.email
+    textInput Forms.email
+        { value = model.email
         , onInput = UpdateEmail
-        , placeholder = "gburdell3@gatech.edu"
+        , attrs =
+            [ Forms.Title "E-mail"
+            , Forms.Horizontal
+            , Forms.Placeholder "gburdell3@gatech.edu"
+            ]
         }
 
 
 passwordField : Model -> Html Msg
 passwordField model =
-    Basics.horizontalField
-        { label = "Password"
-        , name = "password"
-        , type_ = "password"
-        , value = model.password
+    textInput Forms.password
+        { value = model.password
         , onInput = UpdatePassword
-        , placeholder = "••••••••"
+        , attrs =
+            [ Forms.Title "Password"
+            , Forms.Horizontal
+            , Forms.Placeholder "••••••••"
+            ]
         }
 
 
 actionButtons : Model -> Html Msg
 actionButtons model =
-    div [ class "buttons is-right" ]
-        [ Basics.linkButton "Register" Route.EditProfile
-        , Basics.linkButton "Forgot" Route.ForgotPassword
-        , button
-            [ type_ "submit"
-            , class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
+    Buttons.group
+        { alignment = Buttons.AlignRight
+        , connected = False
+        , buttons =
+            [ Buttons.link
+                { content = "Register"
+                , route = Route.EditProfile
+                , attrs = []
+                }
+            , Buttons.link
+                { content = "Forgot"
+                , route = Route.ForgotPassword
+                , attrs = []
+                }
+            , Buttons.submit
+                { content = "Sign In"
+                , attrs =
+                    [ Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsLoading (model.state == Sending)
+                    ]
+                }
             ]
-            [ text "Sign In" ]
-        ]
+        }

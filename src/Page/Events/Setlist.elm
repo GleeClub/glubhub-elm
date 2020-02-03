@@ -3,9 +3,9 @@ module Page.Events.Setlist exposing (Model, Msg(..), init, update, view)
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
 import Html exposing (Html, div, table, tbody, td, text, tr)
-import Html.Attributes exposing (class, id)
+import Html.Attributes exposing (class)
 import Json.Decode as Decode
-import Models.Song exposing (Song, pitchToString, songDecoder)
+import Models.Song exposing (Song, pitchToUnicode, songDecoder)
 import Route
 import Task
 import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
@@ -59,8 +59,7 @@ loadSetlist common eventId =
 
 view : Model -> Html Msg
 view model =
-    div [ id "setlist" ]
-        [ model |> Basics.remoteContent viewSongTable ]
+    model |> Basics.remoteContent viewSongTable
 
 
 viewSongTable : List Song -> Html Msg
@@ -82,14 +81,14 @@ viewSongRow index song =
         , td []
             [ text
                 (song.key
-                    |> Maybe.map pitchToString
+                    |> Maybe.map pitchToUnicode
                     |> Maybe.withDefault "No key"
                 )
             ]
         , td []
             [ text
                 (song.startingPitch
-                    |> Maybe.map pitchToString
+                    |> Maybe.map pitchToUnicode
                     |> Maybe.withDefault "No starting pitch"
                 )
             ]

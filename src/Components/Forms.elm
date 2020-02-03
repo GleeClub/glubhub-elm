@@ -1,154 +1,508 @@
 module Components.Forms exposing
-    ( checkboxInput
-    , dateInput
-    , emailInput
-    , fieldWrapper
+    ( FormAttribute(..)
+    , FormInputType
+    , TextInputType(..)
+    , checkboxInput
+    , control
+    , date
+    , email
+    , enrollment
+    , expandedControl
     , fileInput
-    , genericTextInput
-    , numberInput
-    , numberInputWithPrefix
-    , passwordInput
+    , inputWrapper
+    , int
+    , password
+    , radioInput
+    , section
     , selectInput
+    , string
     , textInput
-    , textInputWithPrefix
     , textareaInput
-    , timeInput
+    , time
     )
 
 import File exposing (File)
-import Html exposing (Html, a, div, i, input, label, option, p, select, span, text, textarea)
-import Html.Attributes exposing (checked, class, name, placeholder, required, selected, type_, value)
-import Html.Events exposing (on, onCheck, onInput)
+import Html exposing (Html, a, br, div, i, input, label, option, p, select, span, text, textarea)
+import Html.Attributes exposing (autocomplete, checked, class, name, placeholder, required, selected, type_, value)
+import Html.Events exposing (on, onCheck, onClick, onInput)
 import Json.Decode as Decode
+import List.Extra as List exposing (find)
+import Maybe.Extra exposing (filter)
+import Models.Info exposing (Enrollment(..), enrollmentFromString, enrollmentToString)
+import Utils exposing (Common, isLoadingClass)
 
 
-type alias FieldInput a =
-    { a
-        | title : String
-        , helpText : Maybe String
+type alias FormInputType a =
+    { toString : a -> String
+    , fromString : String -> a
+    , textType : TextInputType
     }
 
 
-fieldWrapper : FieldInput a -> List (Html msg) -> Html msg
-fieldWrapper field content =
-    div [ class "field" ]
-        [ label [ class "label" ] [ text field.title ]
-        , div [ class "control" ] content
-        , field.helpText
-            |> Maybe.map (\help -> p [ class "help" ] [ text help ])
-            |> Maybe.withDefault (text "")
+string : FormInputType String
+string =
+    { toString = identity
+    , fromString = identity
+    , textType = Text
+    }
+
+
+date : FormInputType String
+date =
+    { toString = identity
+    , fromString = identity
+    , textType = Date
+    }
+
+
+time : FormInputType String
+time =
+    { toString = identity
+    , fromString = identity
+    , textType = Time
+    }
+
+
+email : FormInputType String
+email =
+    { toString = identity
+    , fromString = identity
+    , textType = Email
+    }
+
+
+password : FormInputType String
+password =
+    { toString = identity
+    , fromString = identity
+    , textType = Password
+    }
+
+
+int : FormInputType (Maybe Int)
+int =
+    { toString = Maybe.map String.fromInt >> Maybe.withDefault ""
+    , fromString = String.toInt
+    , textType = Number
+    }
+
+
+section : Common -> FormInputType (Maybe String)
+section common =
+    { toString = Maybe.withDefault "No Section"
+    , fromString = \s -> common.info.sections |> List.find ((==) s)
+    , textType = Text
+    }
+
+
+enrollment : FormInputType (Maybe Enrollment)
+enrollment =
+    { toString = Maybe.map enrollmentToString >> Maybe.withDefault "Inactive"
+    , fromString = enrollmentFromString
+    , textType = Text
+    }
+
+
+type FormAttribute
+    = Title String
+    | Horizontal
+    | RequiredField Bool
+    | HelpText String
+    | Placeholder String
+    | IsExpanded
+    | IsLoading Bool
+    | Prefix String
+    | Suffix String
+    | Autocomplete
+
+
+type TextInputType
+    = Text
+    | Number
+    | Email
+    | Password
+    | Date
+    | Time
+
+
+textTypeToString : TextInputType -> String
+textTypeToString type_ =
+    case type_ of
+        Text ->
+            "text"
+
+        Number ->
+            "number"
+
+        Email ->
+            "email"
+
+        Password ->
+            "password"
+
+        Date ->
+            "date"
+
+        Time ->
+            "time"
+
+
+control : List (Html msg) -> Html msg
+control =
+    p [ class "control" ]
+
+
+expandedControl : List (Html msg) -> Html msg
+expandedControl =
+    p [ class "control is-expanded" ]
+
+
+type alias Input a msg =
+    { value : a
+    , onInput : a -> msg
+    , attrs : List FormAttribute
+    }
+
+
+inputWrapper : List FormAttribute -> List (Html msg) -> Html msg
+inputWrapper attrs content =
+    let
+        fieldLabel =
+            findTitle attrs
+                |> Maybe.map
+                    (\title ->
+                        if attrs |> List.any ((==) Horizontal) then
+                            div [ class "field-label is-normal" ]
+                                [ label [ class "label" ] [ text title ] ]
+
+                        else
+                            label [ class "label" ] [ text title ]
+                    )
+
+        isHorizontal =
+            if attrs |> List.any ((==) Horizontal) then
+                " is-horizontal"
+
+            else
+                ""
+
+        fieldHelpText =
+            findHelpText attrs
+                |> Maybe.map
+                    (\help ->
+                        p [ class "help" ] [ text help ]
+                    )
+
+        body =
+            div [ class "field-body" ]
+                content
+    in
+    div
+        [ class <| "field" ++ isHorizontal ]
+        ([ fieldLabel, Just body, fieldHelpText ]
+            |> List.filterMap identity
+        )
+
+
+fieldWrapperClasses : List FormAttribute -> List String
+fieldWrapperClasses attrs =
+    let
+        isExpanded =
+            Just "is-expanded"
+                |> filter (\_ -> attrs |> List.member IsExpanded)
+
+        isLoading =
+            Just "is-loading"
+                |> filter (\_ -> attrs |> List.member (IsLoading True))
+
+        hasAddons =
+            Just "has-addons"
+                |> filter
+                    (\_ ->
+                        attrs
+                            |> List.any
+                                (\attr ->
+                                    case attr of
+                                        Prefix _ ->
+                                            True
+
+                                        Suffix _ ->
+                                            True
+
+                                        _ ->
+                                            False
+                                )
+                    )
+    in
+    [ isLoading, isExpanded, hasAddons ]
+        |> List.filterMap identity
+        |> (::) "field"
+
+
+fieldWrapper : List FormAttribute -> List (Html msg) -> Html msg
+fieldWrapper attrs content =
+    let
+        fieldPrefix =
+            case prefix attrs of
+                Just pre ->
+                    [ pre ]
+
+                Nothing ->
+                    []
+
+        fieldSuffix =
+            case suffix attrs of
+                Just suf ->
+                    [ suf ]
+
+                Nothing ->
+                    []
+    in
+    div [ class (fieldWrapperClasses attrs |> String.join " ") ]
+        (fieldPrefix ++ content ++ fieldSuffix)
+
+
+findTitle : List FormAttribute -> Maybe String
+findTitle attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    Title p ->
+                        Just p
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+findHelpText : List FormAttribute -> Maybe String
+findHelpText attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    HelpText p ->
+                        Just p
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+findPlaceholder : List FormAttribute -> Maybe String
+findPlaceholder attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    Placeholder p ->
+                        Just p
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+findRequiredField : List FormAttribute -> Maybe Bool
+findRequiredField attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    RequiredField r ->
+                        Just r
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+findPrefix : List FormAttribute -> Maybe String
+findPrefix attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    Prefix p ->
+                        Just p
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+prefix : List FormAttribute -> Maybe (Html msg)
+prefix attrs =
+    attrs
+        |> findPrefix
+        |> Maybe.map
+            (\pre ->
+                control
+                    [ a [ class "button is-static" ]
+                        [ text pre ]
+                    ]
+            )
+
+
+findSuffix : List FormAttribute -> Maybe String
+findSuffix attrs =
+    attrs
+        |> List.filterMap
+            (\attr ->
+                case attr of
+                    Suffix p ->
+                        Just p
+
+                    _ ->
+                        Nothing
+            )
+        |> List.head
+
+
+suffix : List FormAttribute -> Maybe (Html msg)
+suffix attrs =
+    attrs
+        |> findSuffix
+        |> Maybe.map
+            (\pre ->
+                control
+                    [ a [ class "button is-static" ]
+                        [ text pre ]
+                    ]
+            )
+
+
+textInput : FormInputType a -> Input a msg -> Html msg
+textInput inputType data =
+    let
+        isLoading =
+            isLoadingClass
+                (data.attrs |> List.member (IsLoading True))
+
+        baseInputAttrs =
+            [ class <| "input" ++ isLoading
+            , type_ (textTypeToString inputType.textType)
+            , value (inputType.toString data.value)
+            , onInput (inputType.fromString >> data.onInput)
+            ]
+
+        optionalInputAttrs =
+            [ findPlaceholder data.attrs
+                |> Maybe.map placeholder
+            , findRequiredField data.attrs
+                |> Maybe.map required
+            , data.attrs
+                |> find ((==) Autocomplete)
+                |> Maybe.map (\_ -> autocomplete True)
+            ]
+
+        inputAttrs =
+            baseInputAttrs ++ (optionalInputAttrs |> List.filterMap identity)
+    in
+    inputWrapper data.attrs
+        [ fieldWrapper data.attrs
+            [ control
+                [ input inputAttrs [] ]
+            ]
         ]
 
 
-type alias TextInput msg =
-    { title : String
-    , helpText : Maybe String
-    , value : String
-    , placeholder : String
-    , required : Bool
-    , onInput : String -> msg
-    }
+textareaInput : Input String msg -> Html msg
+textareaInput data =
+    let
+        isLoading =
+            isLoadingClass
+                (data.attrs |> List.member (IsLoading True))
 
-
-genericTextInput : String -> TextInput msg -> Html msg
-genericTextInput inputType data =
-    fieldWrapper data
-        [ input
-            [ class "input"
-            , type_ inputType
-            , placeholder data.placeholder
+        baseInputAttrs =
+            [ class <| "textarea" ++ isLoading
             , value data.value
-            , required data.required
             , onInput data.onInput
             ]
-            []
+
+        optionalInputAttrs =
+            [ findPlaceholder data.attrs
+                |> Maybe.map placeholder
+            , findRequiredField data.attrs
+                |> Maybe.map required
+            , data.attrs
+                |> find ((==) Autocomplete)
+                |> Maybe.map (\_ -> autocomplete True)
+            ]
+
+        inputAttrs =
+            baseInputAttrs ++ (optionalInputAttrs |> List.filterMap identity)
+    in
+    inputWrapper data.attrs
+        [ fieldWrapper data.attrs
+            [ control
+                [ textarea inputAttrs [] ]
+            ]
         ]
 
 
-textInput : TextInput msg -> Html msg
-textInput =
-    genericTextInput "text"
-
-
-numberInput : TextInput msg -> Html msg
-numberInput =
-    genericTextInput "number"
-
-
-dateInput : TextInput msg -> Html msg
-dateInput =
-    genericTextInput "date"
-
-
-timeInput : TextInput msg -> Html msg
-timeInput =
-    genericTextInput "time"
-
-
-emailInput : TextInput msg -> Html msg
-emailInput =
-    genericTextInput "email"
-
-
-passwordInput : TextInput msg -> Html msg
-passwordInput =
-    genericTextInput "password"
-
-
-type alias TextInputWithPrefix msg =
-    { title : String
-    , prefix : String
-    , helpText : Maybe String
-    , value : String
-    , placeholder : String
-    , required : Bool
-    , onInput : String -> msg
+type alias SelectInput a msg =
+    { values : List a
+    , selected : a
+    , onInput : a -> msg
+    , attrs : List FormAttribute
     }
 
 
-textInputWithPrefix : TextInputWithPrefix msg -> Html msg
-textInputWithPrefix data =
-    fieldWrapper data <|
-        [ div [ class "field has-addons" ]
-            [ p [ class "control" ]
-                [ a [ class "button is-static" ]
-                    [ text data.prefix ]
-                ]
-            , p [ class "control" ]
-                [ input
-                    [ class "input"
-                    , type_ "text"
-                    , placeholder data.placeholder
-                    , value data.value
-                    , required data.required
-                    , onInput data.onInput
-                    ]
-                    []
+selectInput : FormInputType a -> SelectInput a msg -> Html msg
+selectInput inputType data =
+    let
+        isLoading =
+            isLoadingClass
+                (data.attrs |> List.member (IsLoading True))
+    in
+    inputWrapper data.attrs
+        [ fieldWrapper data.attrs
+            [ div
+                [ class <| "select control" ++ isLoading ]
+                [ select
+                    [ onInput (data.onInput << inputType.fromString) ]
+                    (data.values
+                        |> List.map
+                            (\v ->
+                                option
+                                    [ value <| inputType.toString v
+                                    , selected (v == data.selected)
+                                    ]
+                                    [ text <| inputType.toString v ]
+                            )
+                    )
                 ]
             ]
         ]
 
 
-numberInputWithPrefix : TextInputWithPrefix msg -> Html msg
-numberInputWithPrefix data =
-    fieldWrapper data <|
-        [ div [ class "field has-addons" ]
-            [ p [ class "control" ]
-                [ a [ class "button is-static" ]
-                    [ text data.prefix ]
-                ]
-            , p [ class "control" ]
+radioInput : (a -> String) -> SelectInput a msg -> Html msg
+radioInput render data =
+    let
+        singleOption val =
+            label [ class "radio" ]
                 [ input
-                    [ class "input"
-                    , type_ "number"
-                    , placeholder data.placeholder
-                    , value data.value
-                    , required data.required
-                    , onInput data.onInput
+                    [ type_ "radio"
+                    , checked <| val == data.selected
+                    , onClick <| data.onInput val
                     ]
                     []
+                , text <| " " ++ render val
                 ]
-            ]
+    in
+    inputWrapper data.attrs
+        [ fieldWrapper data.attrs
+            (data.values
+                |> List.map singleOption
+                |> List.intersperse (br [] [])
+            )
         ]
 
 
@@ -161,94 +515,31 @@ type alias CheckboxInput msg =
 
 checkboxInput : CheckboxInput msg -> Html msg
 checkboxInput data =
-    div [ class "field" ]
-        [ div [ class "control" ]
-            [ label [ class "checkbox" ]
-                [ input
-                    [ type_ "checkbox"
-                    , checked data.isChecked
-                    , onCheck data.onChange
-                    ]
-                    []
-                , text <| " " ++ data.content
+    div
+        [ class "control checkbox" ]
+        [ label [ class "checkbox" ]
+            [ input
+                [ type_ "checkbox"
+                , checked data.isChecked
+                , onCheck data.onChange
                 ]
+                []
+            , text <| " " ++ data.content
             ]
-        ]
-
-
-textareaInput : TextInput msg -> Html msg
-textareaInput data =
-    fieldWrapper data
-        [ textarea
-            [ class "textarea"
-            , required data.required
-            , placeholder data.placeholder
-            , value data.value
-            , onInput data.onInput
-            ]
-            []
-        ]
-
-
-type alias SelectInput a msg =
-    { title : String
-    , helpText : Maybe String
-    , values : List a
-    , render : a -> ( String, String )
-    , loading : Bool
-    , selected : a -> Bool
-    , onSelect : String -> msg
-    }
-
-
-selectInput : SelectInput a msg -> Html msg
-selectInput data =
-    div [ class "field" ]
-        [ label [ class "label" ] [ text data.title ]
-        , div
-            [ class <|
-                "select control"
-                    ++ (if data.loading then
-                            " is-loading"
-
-                        else
-                            ""
-                       )
-            ]
-            [ select
-                [ onInput data.onSelect ]
-                (data.values
-                    |> List.map
-                        (\v ->
-                            let
-                                ( optionVal, textVal ) =
-                                    data.render v
-                            in
-                            option
-                                [ value optionVal
-                                , selected (data.selected v)
-                                ]
-                                [ text textVal ]
-                        )
-                )
-            ]
-        , data.helpText
-            |> Maybe.map (\help -> p [ class "help" ] [ text help ])
-            |> Maybe.withDefault (text "")
         ]
 
 
 type alias FileInput msg =
-    { title : String
-    , helpText : Maybe String
-    , file : Maybe File
-    , selectFile : List File -> msg
+    { file : Maybe File
+    , selectFile : Maybe File -> msg
+    , attrs : List FormAttribute
     }
 
 
-filesDecoder : Decode.Decoder (List File)
+filesDecoder : Decode.Decoder (Maybe File)
 filesDecoder =
-    Decode.at [ "target", "files" ] (Decode.list File.decoder)
+    Decode.at [ "target", "files" ]
+        (Decode.list File.decoder |> Decode.map List.head)
 
 
 fileInput : FileInput msg -> Html msg
@@ -280,7 +571,7 @@ fileInput data =
                     )
                 |> Maybe.withDefault (text "")
     in
-    fieldWrapper data <|
+    inputWrapper data.attrs <|
         [ div [ class "file has-name" ]
             [ label [ class "file-label" ]
                 [ inputElement

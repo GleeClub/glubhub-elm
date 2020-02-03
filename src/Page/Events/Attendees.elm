@@ -3,7 +3,7 @@ module Page.Events.Attendees exposing (Model, Msg(..), init, update, view)
 import Components.Basics as Basics
 import Error exposing (GreaseResult)
 import Html exposing (Html, br, div, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, id, style)
+import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Models.Event exposing (EventAttendee, eventAttendeeDecoder)
 import Task
@@ -72,7 +72,7 @@ separateAttendees attendees =
 
 view : Model -> Html Msg
 view model =
-    div [ id "attendees" ]
+    div []
         [ model |> Basics.remoteContent attendeeTables ]
 
 
@@ -83,9 +83,9 @@ attendeeTables attendees =
             separateAttendees attendees
     in
     Basics.column
-        [ Basics.title "Attending"
+        [ Basics.centeredTitle "Attending"
         , attendeeTable attending
-        , Basics.title "Not Attending"
+        , Basics.centeredTitle "Not Attending"
         , attendeeTable notAttending
         ]
 

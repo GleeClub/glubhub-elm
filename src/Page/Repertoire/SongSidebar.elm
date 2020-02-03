@@ -1,12 +1,13 @@
 module Page.Repertoire.SongSidebar exposing (songSidebar)
 
 import Components.Basics as Basics
-import Html exposing (Html, b, br, button, div, p, table, td, text, tr)
+import Components.Buttons as Buttons
+import Html exposing (Html, b, br, div, p, table, td, text, tr)
 import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
-import Models.Permissions as Permissions
-import Models.Song exposing (Pitch, Song, SongLinkSection, SongMode, pitchToString, songModeToString)
+import Models.Song exposing (Pitch, Song, SongLinkSection, SongMode, pitchToUnicode, songModeToString)
 import Page.Repertoire.Links exposing (songLinkButton)
+import Permissions
 import Utils exposing (Common, RemoteData)
 
 
@@ -31,8 +32,11 @@ songSidebar data =
 viewSelectedSong : SongSidebar msg -> Song -> Html msg
 viewSelectedSong data song =
     div []
-        [ Basics.backTextButton "all songs" data.close
-        , Basics.title song.title
+        [ Buttons.back
+            { content = "all songs"
+            , onClick = data.close
+            }
+        , Basics.centeredTitle song.title
         , song.info
             |> Maybe.map (\info -> p [] [ text info, br [] [] ])
             |> Maybe.withDefault (text "")
@@ -41,8 +45,11 @@ viewSelectedSong data song =
         , br [] []
         , linkTable song.links
         , Basics.renderIfHasPermission data.common Permissions.editRepertoire <|
-            button [ class "button", onClick data.edit ]
-                [ text "Edit Song" ]
+            Buttons.button
+                { content = "Edit Song"
+                , onClick = Just data.edit
+                , attrs = []
+                }
         ]
 
 
@@ -61,7 +68,7 @@ pitchSection playPitch name maybeMode maybePitch =
                         ((onClick <| playPitch pitch)
                             :: Basics.tooltip "Hey kid, wanna pitch?"
                         )
-                        [ text <| pitchToString pitch ++ modeText ]
+                        [ text <| pitchToUnicode pitch ++ modeText ]
 
                 Nothing ->
                     b [] [ text "?" ]

@@ -68,11 +68,12 @@ type Msg
     | IgnoreConfirmPrompt
     | ConfirmAccount
     | CancelConfirmAccount
+    | UpdateCommon Common
     | ConfirmAccountMsg ConfirmAccount.Msg
     | HomeMsg Page.Home.Msg
     | LoginMsg Page.Login.Msg
     | RosterMsg Page.Roster.Msg
-    | ProfileMsg Page.Profile.Msg
+    | ProfileMsg Page.Profile.InternalMsg
     | EditProfileMsg Page.EditProfile.Msg
     | EventsMsg Page.Events.Msg
     | EditCarpoolsMsg EditCarpools.Msg
@@ -224,21 +225,21 @@ loadCurrentPage model =
                     ( Just Route.Roster, _ ) ->
                         Page.Roster.init common |> updateWith PageRoster RosterMsg model
 
-                    ( Just (Route.Profile newEmail), Just (PageProfile profileModel) ) ->
+                    ( Just (Route.Profile route), Just (PageProfile profileModel) ) ->
                         -- Don't reload the page if the same member is already loaded
                         if
                             profileModel.member
                                 |> remoteToMaybe
-                                |> Maybe.map (\( member, _ ) -> member.email == newEmail)
+                                |> Maybe.map (\( member, _ ) -> member.email == route.email)
                                 |> Maybe.withDefault True
                         then
                             ( model, Cmd.none )
 
                         else
-                            Page.Profile.init common newEmail |> updateWith PageProfile ProfileMsg model
+                            Page.Profile.init common route |> updateWith PageProfile profileTranslator model
 
                     ( Just (Route.Profile email), _ ) ->
-                        Page.Profile.init common email |> updateWith PageProfile ProfileMsg model
+                        Page.Profile.init common email |> updateWith PageProfile profileTranslator model
 
                     ( Just Route.EditProfile, Just (PageEditProfile _) ) ->
                         ( model, Cmd.none )
@@ -283,6 +284,11 @@ loadCurrentPage model =
 
                     ( Nothing, _ ) ->
                         ( { model | page = Just <| PageNotFound common }, Cmd.none )
+
+
+profileTranslator : Page.Profile.Translator Msg
+profileTranslator =
+    Page.Profile.translator { onInternalMessage = ProfileMsg, onUpdateCommon = UpdateCommon }
 
 
 subscriptions : Model -> Sub Msg
@@ -360,6 +366,9 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        ( UpdateCommon newCommon, _ ) ->
+            ( { model | common = Loaded newCommon }, Cmd.none )
+
         ( CancelConfirmAccount, _ ) ->
             ( { model | confirmAccountModal = Nothing }, Cmd.none )
 
@@ -403,7 +412,7 @@ update msg model =
             ( model, Cmd.none )
 
         ( ProfileMsg pageMsg, Just (PageProfile pageModel) ) ->
-            Page.Profile.update pageMsg pageModel |> updateWith PageProfile ProfileMsg model
+            Page.Profile.update pageMsg pageModel |> updateWith PageProfile profileTranslator model
 
         ( ProfileMsg _, _ ) ->
             ( model, Cmd.none )
@@ -566,7 +575,7 @@ viewCurrentPage page =
             Page.Roster.view pageModel |> Html.map RosterMsg
 
         PageProfile pageModel ->
-            Page.Profile.view pageModel |> Html.map ProfileMsg
+            Page.Profile.view pageModel |> Html.map profileTranslator
 
         PageEditProfile pageModel ->
             Page.EditProfile.view pageModel |> Html.map EditProfileMsg

@@ -1,9 +1,10 @@
 module Page.Events.RequestAbsence exposing (requestAbsence)
 
 import Components.Basics as Basics
-import Html exposing (Html, br, button, div, form, h1, h2, label, text, textarea)
-import Html.Attributes exposing (class, id, placeholder, style, type_, value)
-import Html.Events exposing (onInput, onSubmit)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (textareaInput)
+import Html exposing (Html, br, div)
+import Html.Attributes exposing (style)
 import Models.Event exposing (Event)
 
 
@@ -18,25 +19,33 @@ type alias RequestAbsence msg =
 
 requestAbsence : RequestAbsence msg -> Html msg
 requestAbsence data =
-    div []
-        [ Basics.backTextButton "back to event" data.cancel
-        , h1 [ class "title", style "text-align" "center" ] [ text "Absence Request" ]
-        , h2 [ class "subtitle", style "text-align" "center" ] [ text <| "for " ++ data.event.name ]
+    div [ style "text-align" "center" ]
+        [ Buttons.back
+            { content = "back to event"
+            , onClick = data.cancel
+            }
+        , Basics.title "Absence Request"
+        , Basics.subtitle <| "for " ++ data.event.name
         , br [] []
-        , form [ id "absence-request", onSubmit data.submit ]
-            [ div [ class "field" ]
-                [ label [ class "label" ] [ text "But y tho" ]
-                , div [ class "control" ]
-                    [ textarea
-                        [ class "textarea"
-                        , value data.reason
-                        , onInput data.updateReason
-                        , placeholder "Excuses, excuses"
-                        ]
-                        []
+        , Basics.form data.submit
+            [ textareaInput
+                { value = data.reason
+                , onInput = data.updateReason
+                , attrs =
+                    [ Forms.Title "But y tho"
+                    , Forms.Placeholder "Excuses, excuses"
+                    , Forms.RequiredField True
                     ]
-                ]
-            , button [ type_ "submit", class "button is-primary is-right" ]
-                [ text "Beg for Mercy" ]
+                }
+            , Buttons.group
+                { alignment = Buttons.AlignRight
+                , connected = False
+                , buttons =
+                    [ Buttons.submit
+                        { content = "Beg for Mercy"
+                        , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                        }
+                    ]
+                }
             ]
         ]

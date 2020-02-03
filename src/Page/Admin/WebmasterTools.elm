@@ -1,16 +1,16 @@
 module Page.Admin.WebmasterTools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (fileInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (fileInput)
 import Error exposing (GreaseResult, parseResponse)
 import File exposing (File)
 import Html exposing (Html, button, div, header, text)
 import Html.Attributes exposing (class)
-import Html.Events exposing (onClick)
 import Http
 import Json.Decode as Decode
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, isLoadingClass)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert)
 
 
 
@@ -43,10 +43,10 @@ init common =
 
 
 type Msg
-    = SelectApiBinary (List File)
+    = SelectApiBinary (Maybe File)
     | UploadApi
     | OnUploadApi (GreaseResult ())
-    | SelectFrontendZip (List File)
+    | SelectFrontendZip (Maybe File)
     | UploadFrontend
     | OnUploadFrontend (GreaseResult ())
 
@@ -54,8 +54,8 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        SelectApiBinary files ->
-            ( { model | apiFile = List.head files }, Cmd.none )
+        SelectApiBinary file ->
+            ( { model | apiFile = file }, Cmd.none )
 
         UploadApi ->
             case model.apiFile of
@@ -71,8 +71,8 @@ update msg model =
         OnUploadApi (Err error) ->
             ( { model | apiState = ErrorSending error }, Cmd.none )
 
-        SelectFrontendZip files ->
-            ( { model | frontendFile = List.head files }, Cmd.none )
+        SelectFrontendZip file ->
+            ( { model | frontendFile = file }, Cmd.none )
 
         UploadFrontend ->
             case model.frontendFile of
@@ -131,16 +131,15 @@ view model =
             [ Basics.columns
                 [ Basics.column
                     [ fileInput
-                        { title = "Upload the API:"
-                        , helpText = Nothing
-                        , file = model.apiFile
+                        { file = model.apiFile
                         , selectFile = SelectApiBinary
+                        , attrs = [ Forms.Title "Upload the API:" ]
                         }
-                    , button
-                        [ class <| "button" ++ isLoadingClass (model.apiState == Sending)
-                        , onClick UploadApi
-                        ]
-                        [ text "Send it!" ]
+                    , Buttons.button
+                        { content = "Send it!"
+                        , onClick = Just UploadApi
+                        , attrs = [ Buttons.IsLoading (model.apiState == Sending) ]
+                        }
                     , case model.apiState of
                         ErrorSending error ->
                             Basics.errorBox error
@@ -151,16 +150,15 @@ view model =
                 , div [ class "is-divider-vertical" ] []
                 , Basics.column
                     [ fileInput
-                        { title = "Upload the frontend:"
-                        , helpText = Nothing
-                        , file = model.frontendFile
+                        { file = model.frontendFile
                         , selectFile = SelectFrontendZip
+                        , attrs = [ Forms.Title "Upload the frontend:" ]
                         }
-                    , button
-                        [ class <| "button" ++ isLoadingClass (model.frontendState == Sending)
-                        , onClick UploadFrontend
-                        ]
-                        [ text "Send it!" ]
+                    , Buttons.button
+                        { content = "Send it!"
+                        , onClick = Just UploadFrontend
+                        , attrs = [ Buttons.IsLoading (model.frontendState == Sending) ]
+                        }
                     , case model.frontendState of
                         ErrorSending error ->
                             Basics.errorBox error

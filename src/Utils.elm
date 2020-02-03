@@ -16,6 +16,7 @@ port module Utils exposing
     , goldColor
     , handleJsonResponse
     , isActiveClass
+    , isDisabledClass
     , isLoadingClass
     , isPrimaryClass
     , mapLoaded
@@ -336,6 +337,15 @@ isLoadingClass : Bool -> String
 isLoadingClass isLoading =
     if isLoading then
         " is-loading"
+
+    else
+        ""
+
+
+isDisabledClass : Bool -> String
+isDisabledClass isDisabled =
+    if isDisabled then
+        " is-disabled"
 
     else
         ""

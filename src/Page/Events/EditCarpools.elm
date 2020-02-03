@@ -1,6 +1,7 @@
 module Page.Events.EditCarpools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Error exposing (GreaseResult)
 import Html exposing (Html, article, button, div, i, section, span, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (class, colspan, style)
@@ -549,18 +550,30 @@ memberListAndCarpools model data =
             , Basics.column
                 [ Basics.box
                     [ div [ style "width" "100%", style "padding-bottom" "10px" ]
-                        [ Basics.linkButton "Cancel" <|
-                            Route.Events { id = Just data.event.id, tab = Nothing }
-                        , button
-                            [ class "button is-pulled-right is-primary"
-                            , onClick SaveCarpools
-                            ]
-                            [ text "Update Carpools" ]
+                        [ Buttons.link
+                            { content = "Cancel"
+                            , route = Route.Events { id = Just data.event.id, tab = Nothing }
+                            , attrs = []
+                            }
+                        , Buttons.group
+                            { alignment = Buttons.AlignRight
+                            , connected = False
+                            , buttons =
+                                [ Buttons.button
+                                    { content = "Update Carpools"
+                                    , onClick = Just SaveCarpools
+                                    , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                                    }
+                                ]
+                            }
                         ]
                     , table [ class "table", style "width" "100%" ]
                         (data.carpools |> List.concatMap (carpoolPartialTable model data))
-                    , button [ class "button is-fullwidth", onClick AddNewCarpool ]
-                        [ text "Pick a driver and then click here to add new carpool" ]
+                    , Buttons.button
+                        { content = "Pick a driver and then click here to add new carpool"
+                        , onClick = Just AddNewCarpool
+                        , attrs = [ Buttons.CustomAttrs [ class "is-fullwidth" ] ]
+                        }
                     ]
                 ]
             ]

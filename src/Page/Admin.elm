@@ -1,7 +1,7 @@
-module Page.Admin exposing (Model, Msg(..), init, tabIsActive, update, view)
+module Page.Admin exposing (Model, Msg(..), init, tabIsActive, tabText, update, view, visibleAdminTabs)
 
 import Components.Basics as Basics
-import Components.SelectableList exposing (selectableList)
+import Components.SelectableList exposing (selectableListWithDividers)
 import Html exposing (Html, div, section, td, text)
 import Html.Attributes exposing (class)
 import Page.Admin.AbsenceRequests as AbsenceRequests
@@ -15,6 +15,7 @@ import Page.Admin.SitePermissions as SitePermissions
 import Page.Admin.Uniforms as Uniforms
 import Page.Admin.WebmasterTools as WebmasterTools
 import Page.Events exposing (Msg)
+import Permissions
 import Route exposing (AdminTab(..))
 import Utils exposing (Common, RemoteData(..))
 
@@ -200,19 +201,47 @@ updateWith toModel toMsg model ( tabModel, subCmd ) =
 ---- DATA ----
 
 
-allTabs : List AdminTab
-allTabs =
-    [ AdminCreateEvent Nothing
-    , AdminGigRequest
-    , AdminAbsenceRequests
-    , AdminEditSemester
-    , AdminOfficerPositions
-    , AdminSitePermissions
-    , AdminUniforms
-    , AdminDues
-    , AdminDocumentLinks
-    , AdminWebmasterTools
-    ]
+visibleAdminTabs : Common -> List (List AdminTab)
+visibleAdminTabs common =
+    let
+        permittedTo permission =
+            common.user
+                |> Maybe.map (Utils.permittedTo permission)
+                |> Maybe.withDefault False
+
+        isWebmaster =
+            common.user
+                |> Maybe.map (\u -> u.positions |> List.any ((==) "Webmaster"))
+                |> Maybe.withDefault False
+
+        allAdminTabs =
+            [ [ ( AdminCreateEvent Nothing, permittedTo Permissions.createEvent )
+              , ( AdminGigRequest, permittedTo Permissions.processGigRequests )
+              , ( AdminAbsenceRequests, permittedTo Permissions.processAbsenceRequests )
+              ]
+            , [ ( AdminEditSemester, permittedTo Permissions.editSemester )
+              , ( AdminDocumentLinks, permittedTo Permissions.editLinks )
+              , ( AdminDues, permittedTo Permissions.editTransaction )
+              , ( AdminOfficerPositions, permittedTo Permissions.editOfficers )
+              , ( AdminUniforms, permittedTo Permissions.editUniforms )
+              , ( AdminSitePermissions, permittedTo Permissions.editPermissions )
+              ]
+            , [ ( AdminWebmasterTools, isWebmaster )
+              ]
+            ]
+    in
+    allAdminTabs
+        |> List.map
+            (List.filterMap
+                (\( tab, visible ) ->
+                    if visible then
+                        Just tab
+
+                    else
+                        Nothing
+                )
+            )
+        |> List.filter (not << List.isEmpty)
 
 
 tabText : AdminTab -> String
@@ -228,25 +257,25 @@ tabText tab =
             "Absence Requests"
 
         AdminEditSemester ->
-            "Edit Semester"
+            "Edit the Semester"
 
         AdminOfficerPositions ->
-            "Officer Positions"
+            "Edit Officers"
 
         AdminSitePermissions ->
-            "Site Permissions"
+            "Edit Permissions"
 
         AdminUniforms ->
             "Uniforms"
 
         AdminDues ->
-            "Dues"
+            "Money"
 
         AdminDocumentLinks ->
-            "Document Links"
+            "Edit Documents"
 
         AdminWebmasterTools ->
-            "Webmaster Tools"
+            "Upload API or Site"
 
 
 tabIsActive : Model -> AdminTab -> Bool
@@ -311,12 +340,14 @@ view model =
 
 pageList : Model -> Html Msg
 pageList model =
-    selectableList
-        { listItems = Loaded allTabs
+    selectableListWithDividers
+        { listItems = Loaded (visibleAdminTabs model.common)
         , isSelected = tabIsActive model
         , messageIfEmpty = ""
         , onSelect = SelectTab
         , render = \tab -> [ td [] [ text <| tabText tab ] ]
+        , contentAtTop = text ""
+        , contentAtBottom = text ""
         }
 
 

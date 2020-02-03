@@ -13,6 +13,7 @@ module Models.Info exposing
     , Uniform
     , documentLinkDecoder
     , enrollmentDecoder
+    , enrollmentFromString
     , enrollmentToString
     , eventTypeDecoder
     , infoDecoder
@@ -115,6 +116,19 @@ enrollmentToString enrollment =
 
         Club ->
             "Club"
+
+
+enrollmentFromString : String -> Maybe Enrollment
+enrollmentFromString enrollment =
+    case enrollment of
+        "Class" ->
+            Just Class
+
+        "Club" ->
+            Just Club
+
+        _ ->
+            Nothing
 
 
 type alias MediaType =

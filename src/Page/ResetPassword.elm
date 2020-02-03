@@ -1,17 +1,18 @@
 module Page.ResetPassword exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (passwordInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (textInput)
 import Error exposing (GreaseError(..), GreaseResult)
-import Html exposing (Html, br, button, div, form, h4, p, text)
-import Html.Attributes exposing (class, style, type_)
+import Html exposing (Html, br, div, form, p, text)
+import Html.Attributes exposing (class, style)
 import Html.Events exposing (onSubmit)
 import Http.Detailed exposing (Error(..))
 import Json.Encode as Encode
 import MD5
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, isLoadingClass, postRequest)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequest)
 
 
 
@@ -113,27 +114,29 @@ view model =
             [ Basics.narrowColumn
                 [ form [ onSubmit Submit, style "padding" "10px" ]
                     [ Basics.box
-                        [ h4 [ class "title" ] [ text "Reset Your Password" ]
+                        [ Basics.title4 "Reset Your Password"
                         , p []
                             [ text "Good job getting this far. Gimme a new password, "
                             , text "and you'll be reborn like it's Avatar 2009."
                             ]
                         , br [] []
-                        , passwordInput
-                            { title = "Password"
-                            , helpText = Nothing
-                            , value = model.password
-                            , placeholder = "••••••••"
-                            , required = True
+                        , Forms.textInput Forms.password
+                            { value = model.password
                             , onInput = UpdatePassword
+                            , attrs =
+                                [ Forms.Title "Password"
+                                , Forms.Placeholder "••••••••"
+                                , Forms.RequiredField True
+                                ]
                             }
-                        , passwordInput
-                            { title = "Confirm Password"
-                            , helpText = Nothing
-                            , value = model.confirmPassword
-                            , placeholder = "••••••••"
-                            , required = True
+                        , Forms.textInput Forms.password
+                            { value = model.confirmPassword
                             , onInput = UpdateConfirmPassword
+                            , attrs =
+                                [ Forms.Title "Confirm Password"
+                                , Forms.Placeholder "••••••••"
+                                , Forms.RequiredField True
+                                ]
                             }
                         , actionButtons model
                         , case model.state of
@@ -151,10 +154,16 @@ view model =
 
 actionButtons : Model -> Html Msg
 actionButtons model =
-    div [ class "buttons is-right" ]
-        [ button
-            [ type_ "submit"
-            , class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
+    Buttons.group
+        { alignment = Buttons.AlignRight
+        , connected = False
+        , buttons =
+            [ Buttons.submit
+                { content = "call me Jake Sully"
+                , attrs =
+                    [ Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsLoading (model.state == Sending)
+                    ]
+                }
             ]
-            [ text "call me Jake Sully" ]
-        ]
+        }

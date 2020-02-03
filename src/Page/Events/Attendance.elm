@@ -1,16 +1,27 @@
 module Page.Events.Attendance exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Forms as Forms exposing (checkboxInput, textInput)
 import Error exposing (GreaseResult)
-import Html exposing (Html, div, input, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (checked, class, type_, value)
-import Html.Events exposing (onCheck, onInput)
+import Html exposing (Html, div, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra exposing (groupWhile)
+import List.Extra as List exposing (groupWhile)
 import Models.Event exposing (EventAttendee, SimpleAttendance, eventAttendeeDecoder)
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , fullName
+        , getRequest
+        , mapLoaded
+        , postRequest
+        , resultToRemote
+        , resultToSubmissionState
+        )
 
 
 
@@ -56,17 +67,15 @@ update msg model =
             ( { model | state = resultToSubmissionState result }, Cmd.none )
 
         UpdateAttendance attendee ->
-            let
-                attendanceMapper a =
-                    if a.member.email == attendee.member.email then
-                        attendee
-
-                    else
-                        a
-            in
             ( { model
                 | state = Sending
-                , attendance = model.attendance |> mapLoaded (List.map attendanceMapper)
+                , attendance =
+                    model.attendance
+                        |> mapLoaded
+                            (List.setIf
+                                (\a -> a.member.email == attendee.member.email)
+                                attendee
+                            )
               }
             , updateAttendance model.common model.eventId attendee
             )
@@ -142,7 +151,7 @@ view : Model -> Html Msg
 view model =
     div []
         [ model.attendance |> Basics.remoteContent sectionTables
-        , model.state |> Basics.submissionStateBox
+        , Basics.submissionStateBox model.state
         ]
 
 
@@ -186,56 +195,42 @@ attendeeRow attendee =
     let
         attendance =
             attendee.attendance
-    in
-    tr [ class "no-bottom-border" ]
-        [ td [] [ text (attendee.member |> fullName) ]
-        , td []
-            [ input
-                [ type_ "checkbox"
-                , checked attendee.attendance.didAttend
-                , onCheck
-                    (\didAttend ->
+
+        columns =
+            [ text (attendee.member |> fullName)
+            , checkboxInput
+                { content = ""
+                , isChecked = attendee.attendance.didAttend
+                , onChange =
+                    \didAttend ->
                         UpdateAttendance
                             { attendee | attendance = { attendance | didAttend = didAttend } }
-                    )
-                ]
-                []
-            ]
-        , td []
-            [ input
-                [ type_ "checkbox"
-                , checked attendee.attendance.shouldAttend
-                , onCheck
-                    (\shouldAttend ->
+                }
+            , checkboxInput
+                { content = ""
+                , isChecked = attendee.attendance.shouldAttend
+                , onChange =
+                    \shouldAttend ->
                         UpdateAttendance
                             { attendee | attendance = { attendance | shouldAttend = shouldAttend } }
-                    )
-                ]
-                []
-            ]
-        , td []
-            [ input
-                [ type_ "checkbox"
-                , checked attendee.attendance.confirmed
-                , onCheck
-                    (\confirmed ->
+                }
+            , checkboxInput
+                { content = ""
+                , isChecked = attendee.attendance.confirmed
+                , onChange =
+                    \confirmed ->
                         UpdateAttendance
                             { attendee | attendance = { attendance | confirmed = confirmed } }
-                    )
-                ]
-                []
-            ]
-        , td []
-            [ input
-                [ type_ "number"
-                , class "input"
-                , value <| String.fromInt attendee.attendance.minutesLate
-                , onInput
-                    (\minutesLate ->
+                }
+            , textInput Forms.int
+                { value = Just attendee.attendance.minutesLate
+                , onInput =
+                    \minutesLate ->
                         UpdateAttendance
-                            { attendee | attendance = { attendance | minutesLate = String.toInt minutesLate |> Maybe.withDefault 0 } }
-                    )
-                ]
-                []
+                            { attendee | attendance = { attendance | minutesLate = minutesLate |> Maybe.withDefault 0 } }
+                , attrs = []
+                }
             ]
-        ]
+    in
+    tr [ class "no-bottom-border" ]
+        (columns |> List.map (\column -> td [] [ column ]))

@@ -2,6 +2,7 @@ module Models.Event exposing (..)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
+import Models.Admin exposing (AbsenceRequest, absenceRequestDecoder)
 import Models.Info
     exposing
         ( Enrollment
@@ -31,6 +32,7 @@ type alias Event =
     , rsvpIssue : Maybe String
     , attendance : Maybe SimpleAttendance
     , gradeChange : Maybe SimpleGradeChange
+    , absenceRequest : Maybe AbsenceRequest
     }
 
 
@@ -71,6 +73,7 @@ eventDecoder =
         |> optional "rsvpIssue" (nullable string) Nothing
         |> optional "attendance" (nullable simpleAttendanceDecoder) Nothing
         |> optional "gradeChange" (nullable simpleGradeChangeDecoder) Nothing
+        |> optional "absenceRequest" (nullable absenceRequestDecoder) Nothing
 
 
 type alias SimpleGradeChange =

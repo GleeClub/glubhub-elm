@@ -1,12 +1,12 @@
 module Page.Admin.CreateEvent exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, dateInput, fieldWrapper, selectInput, textInput, textareaInput, timeInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (checkboxInput, radioInput, selectInput, textInput, textareaInput)
 import Datetime exposing (hyphenDateFormatter, parseFormDateAndTimeString, twentyFourHourTimeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, br, button, div, form, input, label, text, textarea)
-import Html.Attributes exposing (checked, class, placeholder, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html exposing (Html, br, div, form)
+import Html.Events exposing (onSubmit)
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
 import List.Extra as List
@@ -93,40 +93,40 @@ periodToString : RepeatPeriod -> String
 periodToString period =
     case period of
         NoRepeat ->
-            "no"
+            "No"
 
         Daily ->
-            "daily"
+            "Daily"
 
         Weekly ->
-            "weekly"
+            "Weekly"
 
         BiWeekly ->
-            "biweekly"
+            "Biweekly"
 
         Monthly ->
-            "monthly"
+            "Monthly"
 
         Yearly ->
-            "yearly"
+            "Yearly"
 
 
 stringToPeriod : String -> RepeatPeriod
 stringToPeriod period =
     case period of
-        "daily" ->
+        "Daily" ->
             Daily
 
-        "weekly" ->
+        "Weekly" ->
             Weekly
 
-        "biweekly" ->
+        "Biweekly" ->
             BiWeekly
 
-        "monthly" ->
+        "Monthly" ->
             Monthly
 
-        "yearly" ->
+        "Yearly" ->
             Yearly
 
         _ ->
@@ -414,69 +414,70 @@ leftColumnInEventForm createForm =
             createForm.newGig
     in
     Basics.column
-        [ textInput
-            { title = "Event Name"
-            , value = newEvent.name
-            , placeholder = "Flashmobbing the HOMO SEX IS SIN people"
-            , helpText = Just "Make it descriptive, make it short."
-            , required = True
+        [ textInput Forms.string
+            { value = newEvent.name
             , onInput = \name -> UpdateNewEventForm { newEvent | name = name }
+            , attrs =
+                [ Forms.Title "Event Name"
+                , Forms.Placeholder "Flashmobbing the HOMO SEX IS SIN people"
+                , Forms.HelpText "Make it descriptive, make it short."
+                , Forms.RequiredField True
+                ]
             }
-        , textInput
-            { title = "Event Location"
-            , value = newEvent.location
-            , placeholder = "Your mom's house 😂"
-            , helpText = Just "ha gottem"
-            , required = False
+        , textInput Forms.string
+            { value = newEvent.location
             , onInput = \location -> UpdateNewEventForm { newEvent | location = location }
+            , attrs =
+                [ Forms.Title "Event Location"
+                , Forms.Placeholder "Your mom's house 😂"
+                , Forms.HelpText "ha gottem"
+                ]
             }
-        , dateInput
-            { title = "Date of Event"
-            , value = newEvent.callDate
-            , placeholder = ""
-            , helpText = Nothing
-            , required = True
+        , textInput Forms.date
+            { value = newEvent.callDate
             , onInput = \callDate -> UpdateNewEventForm { newEvent | callDate = callDate }
+            , attrs =
+                [ Forms.Title "Date of Event"
+                , Forms.RequiredField True
+                ]
             }
-        , timeInput
-            { title = "Call Time"
-            , value = newEvent.callTime
-            , placeholder = ""
-            , helpText = Just "4:20 lamo"
-            , required = True
+        , textInput Forms.time
+            { value = newEvent.callTime
             , onInput = \callTime -> UpdateNewEventForm { newEvent | callTime = callTime }
+            , attrs =
+                [ Forms.Title "Call Time"
+                , Forms.HelpText "4:20 lamo"
+                , Forms.RequiredField True
+                ]
             }
-        , timeInput
-            { title = "Event Time"
-            , value = newGig.performanceTime
-            , placeholder = ""
-            , helpText = Just "4:21 lamo"
-            , required = False
+        , textInput Forms.time
+            { value = newGig.performanceTime
             , onInput = \performanceTime -> UpdateNewGigForm { newGig | performanceTime = performanceTime }
+            , attrs =
+                [ Forms.Title "Event Time"
+                , Forms.HelpText "4:21 lamo"
+                ]
             }
-        , timeInput
-            { title = "Release Time"
-            , value = newEvent.releaseTime
-            , placeholder = ""
-            , helpText = Just "4:22 lamo"
-            , required = False
+        , textInput Forms.time
+            { value = newEvent.releaseTime
             , onInput = \releaseTime -> UpdateNewEventForm { newEvent | releaseTime = releaseTime }
+            , attrs =
+                [ Forms.Title "Release Time"
+                , Forms.HelpText "4:22 lamo"
+                ]
             }
-        , dateInput
-            { title = "Release Date"
-            , value = newEvent.releaseDate
-            , placeholder = ""
-            , helpText = Nothing
-            , required = False
+        , textInput Forms.date
+            { value = newEvent.releaseDate
             , onInput = \releaseDate -> UpdateNewEventForm { newEvent | releaseDate = releaseDate }
+            , attrs = [ Forms.Title "Release Date" ]
             }
-        , textInput
-            { title = "How many points is this worth?"
-            , value = newEvent.points |> Maybe.map String.fromInt |> Maybe.withDefault ""
-            , placeholder = "69"
-            , helpText = Nothing
-            , required = False
-            , onInput = \points -> UpdateNewEventForm { newEvent | points = points |> String.toInt }
+        , textInput Forms.int
+            { value = newEvent.points
+            , onInput = \points -> UpdateNewEventForm { newEvent | points = points }
+            , attrs =
+                [ Forms.Title "How many points is this worth?"
+                , Forms.Placeholder "69"
+                ]
             }
         ]
 
@@ -490,71 +491,46 @@ middleColumnInEventForm common remoteSemesters createForm =
         newGig =
             createForm.newGig
 
-        eventTypeOption selectedType eventType =
-            label [ class "radio" ]
-                [ input
-                    [ type_ "radio"
-                    , checked <| eventType.name == selectedType
-                    , onClick <| UpdateNewEventForm { newEvent | type_ = eventType.name }
-                    ]
-                    []
-                , text <| " " ++ eventType.name
-                ]
+        uniformInputType =
+            { toString = Maybe.map .name >> Maybe.withDefault "(no uniform)"
+            , fromString = \name -> common.info.uniforms |> List.find (\u -> u.name == name)
+            , textType = Forms.Text
+            }
     in
     Basics.column
-        [ fieldWrapper { title = "Event Type", helpText = Nothing } <|
-            (common.info.eventTypes
-                |> List.map (eventTypeOption newEvent.type_)
-                |> List.intersperse (br [] [])
-            )
-        , selectInput
-            { title = "Semester"
-            , helpText = Nothing
-            , values =
+        [ radioInput identity
+            { values = common.info.eventTypes |> List.map .name
+            , selected = newEvent.type_
+            , onInput = \type_ -> UpdateNewEventForm { newEvent | type_ = type_ }
+            , attrs = [ Forms.Title "Event Type" ]
+            }
+        , selectInput Forms.string
+            { values =
                 remoteSemesters
                     |> Utils.remoteToMaybe
                     |> Maybe.map (List.map .name)
                     |> Maybe.withDefault [ common.currentSemester.name ]
-            , render = \name -> ( name, name )
-            , loading = remoteSemesters == Loading
-            , selected = (==) newEvent.semester
-            , onSelect = \semester -> UpdateNewEventForm { newEvent | semester = semester }
-            }
-        , selectInput
-            { title = "Uniform"
-            , helpText = Nothing
-            , values = Nothing :: (common.info.uniforms |> List.map Just)
-            , render =
-                Maybe.map (\u -> ( u.name, u.name ))
-                    >> Maybe.withDefault ( "", "(no uniform)" )
-            , loading = False
-            , selected =
-                \uniform ->
-                    case ( uniform, newGig.uniform ) of
-                        ( Just u, Just selected ) ->
-                            u.id == selected.id
-
-                        ( Nothing, Nothing ) ->
-                            True
-
-                        _ ->
-                            False
-            , onSelect =
-                \name ->
-                    UpdateNewGigForm
-                        { newGig
-                            | uniform = common.info.uniforms |> List.find (\u -> u.name == name)
-                        }
-            }
-        , fieldWrapper { title = "Event Summary", helpText = Nothing } <|
-            [ textarea
-                [ class "textarea"
-                , placeholder "We're gonna get in there, we're gonna use our mouths, and we're gonna get out."
-                , value newEvent.comments
-                , onInput (\comments -> UpdateNewEventForm { newEvent | comments = comments })
+            , selected = newEvent.semester
+            , onInput = \semester -> UpdateNewEventForm { newEvent | semester = semester }
+            , attrs =
+                [ Forms.Title "Semester"
+                , Forms.IsLoading (remoteSemesters == Loading)
                 ]
-                []
-            ]
+            }
+        , selectInput uniformInputType
+            { values = Nothing :: (common.info.uniforms |> List.map Just)
+            , selected = newGig.uniform
+            , onInput = \uniform -> UpdateNewGigForm { newGig | uniform = uniform }
+            , attrs = [ Forms.Title "Uniform" ]
+            }
+        , textareaInput
+            { value = newEvent.comments
+            , onInput = \comments -> UpdateNewEventForm { newEvent | comments = comments }
+            , attrs =
+                [ Forms.Title "Event Summary"
+                , Forms.Placeholder "We're gonna get in there, we're gonna use our mouths, and we're gonna get out."
+                ]
+            }
         ]
 
 
@@ -580,23 +556,31 @@ rightColumnInEventForm createForm =
 
             else
                 [ isPublicInput
-                , textInput
-                    { title = "Public Summary"
-                    , value = newGig.summary
-                    , placeholder = "Friends? Countrymen? Bueller?"
-                    , helpText = Just "Careful, real people will see this"
-                    , required = False
+                , textInput Forms.string
+                    { value = newGig.summary
                     , onInput = \summary -> UpdateNewGigForm { newGig | summary = summary }
+                    , attrs =
+                        [ Forms.Title "Public Summary"
+                        , Forms.HelpText "Careful, real people will see this"
+                        , Forms.Placeholder "Friends? Countrymen? Bueller?"
+                        ]
                     }
                 , textareaInput
-                    { title = "Public Description"
-                    , value = newGig.description
-                    , placeholder = "We the people, in order to kick a more perfect ass, I don;t know where this is going"
-                    , helpText = Just "Careful, real people will see this"
-                    , required = False
+                    { value = newGig.description
                     , onInput = \description -> UpdateNewGigForm { newGig | description = description }
+                    , attrs =
+                        [ Forms.Title "Public Description"
+                        , Forms.HelpText "Careful, real people will see this"
+                        , Forms.Placeholder "We the people, in order to kick a more perfect ass, I don't know where this is going"
+                        ]
                     }
                 ]
+
+        repeatInputType =
+            { toString = periodToString >> capitalizeFirstChar
+            , fromString = stringToPeriod
+            , textType = Forms.Text
+            }
     in
     Basics.column
         (publicEventInputs
@@ -610,24 +594,24 @@ rightColumnInEventForm createForm =
                     , isChecked = newEvent.gigCount
                     , onChange = \gigCount -> UpdateNewEventForm { newEvent | gigCount = gigCount }
                     }
-               , selectInput
-                    { title = "Repeat"
-                    , helpText = Nothing
-                    , values = allRepeatPeriods
-                    , render = \p -> ( periodToString p, periodToString p |> capitalizeFirstChar )
-                    , loading = False
-                    , selected = (==) newEvent.repeat
-                    , onSelect = \period -> UpdateNewEventForm { newEvent | repeat = stringToPeriod period }
+               , selectInput repeatInputType
+                    { values = allRepeatPeriods
+                    , selected = newEvent.repeat
+                    , onInput = \period -> UpdateNewEventForm { newEvent | repeat = period }
+                    , attrs = [ Forms.Title "Repeat" ]
                     }
-               , dateInput
-                    { title = "Repeat Until"
-                    , value = newEvent.repeatUntil
-                    , placeholder = ""
-                    , helpText = Nothing
-                    , required = newEvent.repeat /= NoRepeat
+               , textInput Forms.date
+                    { value = newEvent.repeatUntil
                     , onInput = \repeatUntil -> UpdateNewEventForm { newEvent | repeatUntil = repeatUntil }
+                    , attrs =
+                        [ Forms.Title "Repeat Until"
+                        , Forms.RequiredField (newEvent.repeat /= NoRepeat)
+                        ]
                     }
                , br [] []
-               , button [ type_ "submit", class "button is-primary" ] [ text "Yeehaw" ]
+               , Buttons.submit
+                    { content = "Yeehaw"
+                    , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                    }
                ]
         )
