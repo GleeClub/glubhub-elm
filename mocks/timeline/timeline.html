@@ -1,0 +1,72 @@
+<html>
+<head>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <!-- <script src="https://unpkg.com/axios/dist/axios.min.js"></script> -->
+  <link rel="stylesheet" type="text/css" href="bulma.css">
+  <style type="text/css">
+    body{
+      background-color: #fafafa;
+    }
+
+    .dot{
+      fill:grey;
+    }
+  </style>
+</head>
+<body>
+  <div class="section">
+    <div class="container">
+      <div class="columns">
+        <div class="colmumn">
+          <h1 class="title">This Week</h1>
+          <div class="box">
+            <svg width="500" height="500"></svg>
+          </div>
+        </div>
+        <div class="colmumn"></div>
+      </div>
+    </div>
+  </div>
+  <script type="text/javascript">
+      //https://bl.ocks.org/gordlea/27370d1eea8464b04538e6d8ced39e89
+
+      //need the should attends to show the faded dots, whcih prob actually won't be faded
+      var timeline = d3.select("svg");
+      var height = 500;
+
+      var parseTime = d3.timeParse("%Q");
+      var y = d3.scaleLinear().range([height-20, 10]);
+
+      d3.json("https://gleeclub.gatech.edu/cgi-bin/api/week_of_events")
+      .then(function(data){
+        data.forEach(function(d){
+          d.callTime = parseTime(d.callTime);
+        });
+
+        console.log(data);
+        //this needs to go from monday to sunday
+        var now = new Date();
+        monday = d3.timeMonday();
+        var sunday = monday.getTime() + (7*86400000) - 1;
+        y.domain([sunday, monday]);
+        timeline.append("g")
+          .attr("transform", "translate(100,0)")
+          .call(d3.axisLeft(y).ticks(d3.timeDay.count(monday, sunday)).tickFormat(d3.timeFormat("%a")).tickSizeOuter(0));
+
+        timeline.selectAll("circle")
+          .data(data)
+          .enter()
+            .append("circle")
+            .attr("class", "dot")
+            .attr("cy", function(d) { return y(d.callTime); })
+            .attr("cx", "100")
+            .attr("r", 5);
+        timeline.selectAll("p")
+          .data(data)
+          .enter()
+            .append("p")
+            .text(function(d){ return d.name })
+      });
+  </script>
+</body>
+</html>
