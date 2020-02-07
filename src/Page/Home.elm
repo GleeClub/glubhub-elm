@@ -89,7 +89,7 @@ attendanceMessage maybeGrades =
                 "Ayy lamo nice."
 
             else if grades.finalGrade >= 80.0 then
-                "Ok not bad, I guess."
+                "OK not bad, I guess."
 
             else if grades.finalGrade >= 70.0 then
                 "Pls"
