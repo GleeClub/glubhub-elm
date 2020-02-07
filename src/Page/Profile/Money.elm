@@ -10,9 +10,10 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Models.Event exposing (Member)
 import Models.Info exposing (Enrollment(..), Transaction, transactionDecoder)
+import Request
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, resultToRemote)
 
 
 
@@ -84,7 +85,7 @@ loadMemberTransactions common member =
         url =
             "/transactions/" ++ member.email
     in
-    getRequest common url (Decode.list transactionDecoder)
+    Request.get common url (Decode.list transactionDecoder)
         |> Task.attempt OnLoadMemberTransactions
 
 
@@ -102,7 +103,7 @@ resolveTransaction common transactionId resolved =
                         "false"
                    )
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnResolveTransaction
 
 

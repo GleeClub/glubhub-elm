@@ -14,9 +14,10 @@ import Json.Encode as Encode
 import List.Extra as List
 import Maybe.Extra exposing (isNothing)
 import Models.Info exposing (Semester, semesterDecoder)
+import Request
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), resultToRemote)
 
 
 
@@ -155,7 +156,7 @@ update msg model =
 
 loadSemesters : Common -> Cmd Msg
 loadSemesters common =
-    getRequest common "/semesters" (Decode.list semesterDecoder)
+    Request.get common "/semesters" (Decode.list semesterDecoder)
         |> Task.attempt OnLoadSemesters
 
 
@@ -165,13 +166,13 @@ changeSemester common semesterName =
         url =
             "/semesters/" ++ semesterName ++ "/set_current"
     in
-    postRequest common url (Encode.string "")
+    Request.post common url (Encode.string "")
         |> Task.attempt OnChange
 
 
 createSemester : Common -> SemesterForm -> Cmd Msg
 createSemester common semesterForm =
-    postRequest common "/semesters" (semesterForm |> serializeSemester common)
+    Request.post common "/semesters" (semesterForm |> serializeSemester common)
         |> Task.attempt OnChange
 
 
@@ -181,7 +182,7 @@ editSemester common name semesterForm =
         url =
             "/semesters/" ++ name
     in
-    postRequest common url (semesterForm |> serializeSemester common)
+    Request.post common url (semesterForm |> serializeSemester common)
         |> Task.attempt OnChange
 
 

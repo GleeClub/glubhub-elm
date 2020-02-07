@@ -3,7 +3,7 @@ module Page.Admin.Dues exposing (Model, Msg(..), init, update, view)
 import Components.Basics as Basics
 import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (checkboxInput, inputWrapper, selectInput, textInput)
-import Datetime exposing (..)
+import Datetime
 import Error exposing (GreaseResult)
 import Html exposing (Html, a, b, br, button, div, h1, h3, li, p, table, tbody, td, text, tr, ul)
 import Html.Attributes exposing (class, style)
@@ -13,9 +13,10 @@ import List.Extra as List
 import Models.Admin exposing (Fee, feeDecoder)
 import Models.Event exposing (Member)
 import Models.Info exposing (Transaction, transactionDecoder)
+import Request
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, mapLoaded, resultToRemote, resultToSubmissionState)
 
 
 
@@ -200,13 +201,13 @@ update msg model =
 
 loadFees : Common -> Cmd Msg
 loadFees common =
-    getRequest common "/fees" (Decode.list feeDecoder)
+    Request.get common "/fees" (Decode.list feeDecoder)
         |> Task.attempt OnLoadFees
 
 
 loadTransactions : Common -> Cmd Msg
 loadTransactions common =
-    getRequest common "/transactions" (Decode.list transactionDecoder)
+    Request.get common "/transactions" (Decode.list transactionDecoder)
         |> Task.attempt OnLoadTransactions
 
 
@@ -224,7 +225,7 @@ resolveTransaction common transactionId resolved =
                         "false"
                    )
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnResolveTransaction
 
 
@@ -234,19 +235,19 @@ updateFeeAmount common fee =
         url =
             "/fees/" ++ fee.name ++ "/" ++ String.fromInt fee.amount
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnUpdateFee
 
 
 chargeDues : Common -> Cmd Msg
 chargeDues common =
-    postRequest common "/fees/charge_dues" (Encode.object [])
+    Request.post common "/fees/charge_dues" (Encode.object [])
         |> Task.attempt OnChargeDues
 
 
 chargeLateDues : Common -> Cmd Msg
 chargeLateDues common =
-    postRequest common "/fees/charge_late_dues" (Encode.object [])
+    Request.post common "/fees/charge_late_dues" (Encode.object [])
         |> Task.attempt OnChargeLateDues
 
 
@@ -261,7 +262,7 @@ createBatchOfTransactions common batch =
                 , ( "description", Encode.string batch.description )
                 ]
     in
-    postRequest common "/fees/create_batch" body
+    Request.post common "/fees/create_batch" body
         |> Task.attempt OnSendTransactionBatch
 
 

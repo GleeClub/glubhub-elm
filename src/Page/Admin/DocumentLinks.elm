@@ -10,20 +10,9 @@ import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (removeAt, setAt)
 import Models.Info exposing (DocumentLink, documentLinkDecoder)
+import Request
 import Task
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , deleteRequest
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , remoteToMaybe
-        , resultToRemote
-        , resultToSubmissionState
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, remoteToMaybe, resultToRemote, resultToSubmissionState)
 
 
 
@@ -127,7 +116,7 @@ findLink index model =
 
 loadDocumentLinks : Common -> Cmd Msg
 loadDocumentLinks common =
-    getRequest common "/google_docs" (Decode.list documentLinkDecoder)
+    Request.get common "/google_docs" (Decode.list documentLinkDecoder)
         |> Task.attempt OnLoadLinks
 
 
@@ -140,19 +129,19 @@ updateDocumentLink common link =
         body =
             link |> serializeDocumentLink
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.attempt OnChangeLink
 
 
 deleteDocumentLink : Common -> DocumentLink -> Cmd Msg
 deleteDocumentLink common link =
-    deleteRequest common ("/google_docs/" ++ link.name)
+    Request.delete common ("/google_docs/" ++ link.name)
         |> Task.attempt OnChangeLink
 
 
 newDocumentLink : Common -> DocumentLink -> Cmd Msg
 newDocumentLink common link =
-    postRequest common "/google_docs" (serializeDocumentLink link)
+    Request.post common "/google_docs" (serializeDocumentLink link)
         |> Task.attempt OnChangeLink
 
 

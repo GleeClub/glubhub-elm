@@ -25,11 +25,12 @@ import Page.Profile
 import Page.Repertoire
 import Page.ResetPassword
 import Page.Roster
+import Request
 import Route exposing (Route(..))
 import Task
 import Time exposing (Posix, here, now)
 import Url exposing (Url)
-import Utils exposing (Common, RemoteData(..), getRequest, mapLoaded, remoteToMaybe, setToken)
+import Utils exposing (Common, RemoteData(..), mapLoaded, remoteToMaybe, setToken)
 
 
 type alias Model =
@@ -112,20 +113,20 @@ loadCommon token key =
             { token = token }
 
         getUser =
-            getRequest auth "/user" (nullable memberDecoder)
+            Request.get auth "/user" (nullable memberDecoder)
 
         getMembers =
             if token == "" then
                 Task.succeed []
 
             else
-                getRequest auth "/members" (Decode.list memberDecoder)
+                Request.get auth "/members" (Decode.list memberDecoder)
 
         getInfo =
-            getRequest auth "/static" infoDecoder
+            Request.get auth "/static" infoDecoder
 
         getCurrentSemester =
-            getRequest auth "/semesters/current" semesterDecoder
+            Request.get auth "/semesters/current" semesterDecoder
 
         getTimeAndTimeZone =
             Task.map2 (\time timeZone -> ( time, timeZone )) now here

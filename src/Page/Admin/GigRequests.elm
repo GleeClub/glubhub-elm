@@ -9,20 +9,11 @@ import Html.Attributes exposing (class, colspan, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Models.Admin exposing (GigRequest, GigRequestStatus(..), gigRequestDecoder)
+import Request
 import Route
 import Task
 import Time exposing (posixToMillis)
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , checkSubmissionResult
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , resultToRemote
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, mapLoaded, resultToRemote)
 
 
 
@@ -119,7 +110,7 @@ update msg model =
 
 loadGigRequests : Common -> Cmd Msg
 loadGigRequests common =
-    getRequest common "/gig_requests?all=true" (Decode.list gigRequestDecoder)
+    Request.get common "/gig_requests?all=true" (Decode.list gigRequestDecoder)
         |> Task.attempt OnLoadGigRequests
 
 
@@ -129,7 +120,7 @@ dismissGigRequest common gigRequest =
         url =
             "/gig_requests/" ++ String.fromInt gigRequest.id ++ "/dismiss"
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnRespondToGigRequest
 
 
@@ -139,7 +130,7 @@ reopenGigRequest common gigRequest =
         url =
             "/gig_requests/" ++ String.fromInt gigRequest.id ++ "/reopen"
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnRespondToGigRequest
 
 

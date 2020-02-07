@@ -15,6 +15,7 @@ import Maybe.Extra exposing (filter, isJust)
 import Models.Document exposing (MeetingMinutes, meetingMinutesDecoder)
 import Models.Event exposing (Member)
 import Permissions exposing (editMinutes, viewCompleteMinutes)
+import Request
 import Route exposing (MinutesRoute, MinutesTab(..))
 import Task
 import Utils
@@ -22,14 +23,10 @@ import Utils
         ( Common
         , RemoteData(..)
         , SubmissionState(..)
-        , deleteRequest
         , deployEditor
-        , getRequest
         , mapLoaded
         , optionalSingleton
         , permittedTo
-        , postRequest
-        , postRequestFull
         , rawHtml
         , remoteToMaybe
         , resultToRemote
@@ -429,7 +426,7 @@ updateUrl model =
 
 loadAllMinutes : Common -> Cmd Msg
 loadAllMinutes common =
-    getRequest common "/meeting_minutes" (Decode.list meetingMinutesDecoder)
+    Request.get common "/meeting_minutes" (Decode.list meetingMinutesDecoder)
         |> Task.attempt OnLoadAllMinutes
 
 
@@ -439,7 +436,7 @@ loadSingleMinutes common minutesId tab =
         url =
             "/meeting_minutes/" ++ String.fromInt minutesId
     in
-    getRequest common url meetingMinutesDecoder
+    Request.get common url meetingMinutesDecoder
         |> Task.attempt (OnLoadSingleMinutes tab)
 
 
@@ -449,7 +446,7 @@ createNewMinutes common =
         value =
             Encode.object [ ( "name", Encode.string newMinutesTitle ) ]
     in
-    postRequestFull common "/meeting_minutes" value Utils.decodeId
+    Request.postReturningId common "/meeting_minutes" value
         |> Task.attempt OnCreateNewMinutes
 
 
@@ -462,7 +459,7 @@ updateMinutes common minutes =
         body =
             serializeMinutes minutes
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.map (\_ -> minutes)
         |> Task.attempt OnSaveEditingMinutes
 
@@ -486,7 +483,7 @@ deleteMinutes common minutesId =
         url =
             "/meeting_minutes/" ++ String.fromInt minutesId
     in
-    deleteRequest common url
+    Request.delete common url
         |> Task.map (\_ -> minutesId)
         |> Task.attempt OnDeleteMinutes
 
@@ -742,6 +739,7 @@ editHeader context =
                     [ Forms.Prefix "Title"
                     , Forms.Placeholder "Secret Evil Meeting of Doom"
                     , Forms.RequiredField True
+                    , Forms.IsExpanded
                     ]
                 }
 
@@ -782,7 +780,7 @@ editHeader context =
                         }
                     , Buttons.button
                         { content = "Delete"
-                        , onClick = Just <| SwitchEditingPublicOrPrivate False
+                        , onClick = Just TryToDeleteMinutes
                         , attrs =
                             [ Buttons.Color Buttons.IsDanger
                             , Buttons.IsLoading (context.deleteState == Just Sending)
@@ -791,8 +789,10 @@ editHeader context =
                     ]
                 }
     in
-    Forms.inputWrapper [ Forms.Horizontal, Forms.IsExpanded ]
-        [ publicOrPrivate
-        , titleField
-        , saveButton
-        ]
+    div [ class "field is-grouped is-grouped-centered is-fullwidth" ]
+        ([ publicOrPrivate
+         , titleField
+         , saveButton
+         ]
+            |> List.map (\field -> Forms.control [ field ])
+        )

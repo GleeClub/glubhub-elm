@@ -6,8 +6,9 @@ import Html exposing (Html, br, div, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Models.Event exposing (EventAttendee, eventAttendeeDecoder)
+import Request
 import Task
-import Utils exposing (Common, RemoteData(..), fullName, getRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), fullName, resultToRemote)
 
 
 
@@ -48,7 +49,7 @@ loadAttendees common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/see_whos_attending"
     in
-    getRequest common url (Decode.list eventAttendeeDecoder)
+    Request.get common url (Decode.list eventAttendeeDecoder)
         |> Task.attempt OnLoadAttendees
 
 

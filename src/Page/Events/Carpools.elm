@@ -8,9 +8,10 @@ import Html.Attributes exposing (style)
 import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
 import Permissions
+import Request
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), fullName, getRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), fullName, resultToRemote)
 
 
 
@@ -54,7 +55,7 @@ loadCarpools common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/carpools"
     in
-    getRequest common url (Decode.list eventCarpoolDecoder)
+    Request.get common url (Decode.list eventCarpoolDecoder)
         |> Task.attempt OnLoadCarpools
 
 

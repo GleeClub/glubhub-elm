@@ -10,20 +10,10 @@ import Json.Encode as Encode
 import List.Extra exposing (find)
 import Models.Event exposing (Member, MemberRole, memberRoleDecoder)
 import Models.Info exposing (Role)
+import Request
 import Route exposing (AdminTab(..))
 import Task
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , fullName
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , resultToRemote
-        , resultToSubmissionState
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, mapLoaded, resultToRemote, resultToSubmissionState)
 
 
 
@@ -143,19 +133,19 @@ switchMembers model role ( oldMember, newMember ) =
 
 loadCurrentOfficers : Common -> Cmd Msg
 loadCurrentOfficers common =
-    getRequest common "/member_roles" (Decode.list memberRoleDecoder)
+    Request.get common "/member_roles" (Decode.list memberRoleDecoder)
         |> Task.attempt OnLoadOfficerPositions
 
 
 addMemberRole : Common -> MemberRole -> Cmd Msg
 addMemberRole common memberRole =
-    postRequest common "/roles/add" (serializeMemberRole memberRole)
+    Request.post common "/roles/add" (serializeMemberRole memberRole)
         |> Task.attempt OnChange
 
 
 removeMemberRole : Common -> MemberRole -> Cmd Msg
 removeMemberRole common memberRole =
-    postRequest common "/roles/remove" (serializeMemberRole memberRole)
+    Request.post common "/roles/remove" (serializeMemberRole memberRole)
         |> Task.attempt OnChange
 
 
@@ -163,10 +153,10 @@ switchMemberRole : Common -> Role -> ( Member, Member ) -> Cmd Msg
 switchMemberRole common role ( oldMember, newMember ) =
     let
         removeTask =
-            postRequest common "/roles/remove" (serializeMemberRole { role = role, member = oldMember })
+            Request.post common "/roles/remove" (serializeMemberRole { role = role, member = oldMember })
 
         addTask _ =
-            postRequest common "/roles/add" (serializeMemberRole { role = role, member = newMember })
+            Request.post common "/roles/add" (serializeMemberRole { role = role, member = newMember })
     in
     removeTask
         |> Task.andThen addTask

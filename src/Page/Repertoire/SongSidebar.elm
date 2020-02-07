@@ -16,6 +16,7 @@ type alias SongSidebar msg =
     , song : RemoteData Song
     , close : msg
     , edit : msg
+    , tryToDelete : msg
     , playPitch : Pitch -> msg
     }
 
@@ -45,16 +46,25 @@ viewSelectedSong data song =
         , br [] []
         , linkTable song.links
         , Basics.renderIfHasPermission data.common Permissions.editRepertoire <|
-            Buttons.button
-                { content = "Edit Song"
-                , onClick = Just data.edit
-                , attrs = []
-                }
+            div []
+                [ Buttons.button
+                    { content = "Edit Song"
+                    , onClick = Just data.edit
+                    , attrs = []
+                    }
+                , br [] []
+                , br [] []
+                , Buttons.button
+                    { content = "Delete Song"
+                    , onClick = Just data.tryToDelete
+                    , attrs = [ Buttons.Color Buttons.IsDanger ]
+                    }
+                ]
         ]
 
 
 pitchSection : (Pitch -> msg) -> String -> Maybe SongMode -> Maybe Pitch -> Html msg
-pitchSection playPitch name maybeMode maybePitch =
+pitchSection playPitch sectionName maybeMode maybePitch =
     let
         modeText =
             maybeMode
@@ -74,7 +84,7 @@ pitchSection playPitch name maybeMode maybePitch =
                     b [] [ text "?" ]
     in
     p []
-        [ text <| name ++ ": "
+        [ text <| sectionName ++ ": "
         , pitchText
         ]
 

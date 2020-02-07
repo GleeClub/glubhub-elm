@@ -7,25 +7,13 @@ import Components.Forms as Forms exposing (textInput, textareaInput)
 import Error exposing (GreaseResult)
 import Html exposing (Html, b, button, div, i, p, span, table, td, text, th, tr)
 import Html.Attributes exposing (style)
-import Json.Decode as Decode exposing (field, string)
+import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (getAt, setAt, updateAt)
 import Models.Info exposing (Uniform, uniformDecoder)
+import Request
 import Task
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , deleteRequest
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , postRequestFull
-        , remoteToMaybe
-        , resultToRemote
-        , resultToSubmissionState
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, remoteToMaybe, resultToRemote, resultToSubmissionState)
 
 
 
@@ -163,7 +151,7 @@ findUniform index model =
 
 loadUniforms : Common -> Cmd Msg
 loadUniforms common =
-    getRequest common "/uniforms" (Decode.list uniformDecoder)
+    Request.get common "/uniforms" (Decode.list uniformDecoder)
         |> Task.attempt OnLoadUniforms
 
 
@@ -176,19 +164,19 @@ updateUniform common uniform =
         body =
             uniform |> serializeUniform
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.attempt OnChangeUniform
 
 
 deleteUniform : Common -> Uniform -> Cmd Msg
 deleteUniform common uniform =
-    deleteRequest common ("/uniforms/" ++ String.fromInt uniform.id)
+    Request.delete common ("/uniforms/" ++ String.fromInt uniform.id)
         |> Task.attempt OnChangeUniform
 
 
 createUniform : Common -> Uniform -> Cmd Msg
 createUniform common uniform =
-    postRequestFull common "/uniforms" (serializeUniform uniform) (field "id" Decode.int)
+    Request.postReturningId common "/uniforms" (serializeUniform uniform)
         |> Task.attempt OnCreateUniform
 
 

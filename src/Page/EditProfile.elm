@@ -11,10 +11,11 @@ import MD5
 import Maybe.Extra as Maybe exposing (isJust, isNothing)
 import Models.Event exposing (Member)
 import Models.Info exposing (Enrollment(..), enrollmentToString)
+import Request
 import Route
 import Task
 import Time exposing (toYear)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, postRequest)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert)
 
 
 
@@ -208,13 +209,13 @@ submit model =
 
 updateMemberProfile : Encode.Value -> Common -> Cmd Msg
 updateMemberProfile profile common =
-    postRequest common "/members/profile" profile
+    Request.post common "/members/profile" profile
         |> Task.attempt OnSubmit
 
 
 registerNewMember : Encode.Value -> Common -> Cmd Msg
 registerNewMember profile common =
-    postRequest common "/members" profile
+    Request.post common "/members" profile
         |> Task.attempt OnSubmit
 
 
@@ -548,6 +549,7 @@ enrollmentBlock : Common -> ProfileForm -> Html Msg
 enrollmentBlock common profileForm =
     Forms.inputWrapper [ Forms.Horizontal ]
         [ enrollmentOptions profileForm (isJust common.user)
+        , span [ style "width" "15px" ] []
         , selectInput (Forms.section common)
             { values = common.info.sections |> List.map Just
             , selected = profileForm.section
@@ -585,27 +587,3 @@ enrollmentOptions profile isLoggedIn =
                     |> List.filterMap identity
             }
         ]
-
-
-
--- <style>
--- .buttons
--- {
---   margin-bottom: 0 !important;
--- }
--- .buttons .button
--- {
---   margin-bottom: 0;
--- }
--- input[type$="number"]
--- {
---   max-width: 10em;
--- }
--- p.control.checkbox
--- {
---   height: 2.25em;
---   padding-top: 0.5em;
---   padding-left: 1em;
---   padding-right: 1em;
--- }
--- </style>

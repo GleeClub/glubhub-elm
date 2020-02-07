@@ -18,6 +18,7 @@ import Page.Profile.Attendance as Attendance
 import Page.Profile.Money as Money
 import Page.Profile.Semesters as Semesters
 import Permissions
+import Request
 import Route exposing (ProfileRoute, ProfileTab(..))
 import Task
 import Utils
@@ -25,12 +26,9 @@ import Utils
         ( Common
         , RemoteData(..)
         , SubmissionState(..)
-        , deleteRequest
         , fullName
-        , getRequest
         , isActiveClass
         , mapLoaded
-        , postRequest
         , setOldToken
         , setToken
         )
@@ -404,7 +402,7 @@ changeTab model tab =
 
 loadMember : Common -> ProfileRoute -> Cmd Msg
 loadMember common route =
-    getRequest common ("/members/" ++ route.email) memberDecoder
+    Request.get common ("/members/" ++ route.email) memberDecoder
         |> Task.map (\member -> ( member, route.tab ))
         |> Task.attempt (ForSelf << OnLoadMember)
 
@@ -418,7 +416,7 @@ loginAsMember common email =
         decoder =
             Decode.field "token" Decode.string
     in
-    getRequest common url decoder
+    Request.get common url decoder
         |> Task.attempt (ForSelf << OnLoginAsMember)
 
 
@@ -428,7 +426,7 @@ deleteMember common email =
         url =
             "/members/" ++ email ++ "?confirm=true"
     in
-    deleteRequest common url
+    Request.delete common url
         |> Task.attempt (ForSelf << OnDeleteMember)
 
 
@@ -444,8 +442,8 @@ updateMember common member memberForm =
         newUrl =
             "/members/" ++ memberForm.email
     in
-    postRequest common url body
-        |> Task.andThen (\_ -> getRequest common newUrl memberDecoder)
+    Request.post common url body
+        |> Task.andThen (\_ -> Request.get common newUrl memberDecoder)
         |> Task.map (\updatedMember -> ( member.email, updatedMember ))
         |> Task.attempt (ForSelf << OnUpdateMember)
 

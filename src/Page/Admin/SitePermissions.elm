@@ -9,9 +9,10 @@ import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import Models.Admin exposing (RolePermission, rolePermissionDecoder)
 import Models.Info exposing (Permission, PermissionType(..))
+import Request
 import Route exposing (AdminTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, getRequest, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, resultToRemote)
 
 
 
@@ -89,7 +90,7 @@ permissionsAreEqual permission1 permission2 =
 
 loadPermissions : Common -> Cmd Msg
 loadPermissions common =
-    getRequest common "/role_permissions" (Decode.list rolePermissionDecoder)
+    Request.get common "/role_permissions" (Decode.list rolePermissionDecoder)
         |> Task.attempt OnLoadPermissions
 
 
@@ -102,7 +103,7 @@ disablePermission common rolePermission =
         permission =
             serializePermission rolePermission
     in
-    postRequest common url permission
+    Request.post common url permission
         |> Task.attempt OnTogglePermission
 
 
@@ -115,7 +116,7 @@ enablePermission common rolePermission =
         permission =
             serializePermission rolePermission
     in
-    postRequest common url permission
+    Request.post common url permission
         |> Task.attempt OnTogglePermission
 
 

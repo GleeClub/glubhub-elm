@@ -11,8 +11,9 @@ import Json.Encode as Encode
 import List.Extra as List
 import Maybe.Extra as Maybe
 import Models.Info exposing (Enrollment(..), enrollmentToString)
+import Request
 import Task
-import Utils exposing (Common, SubmissionState(..), postRequest)
+import Utils exposing (Common, SubmissionState(..))
 
 
 type alias ConfirmAccountHeader msg =
@@ -126,7 +127,7 @@ submitForm common semesterForm =
         url =
             "/members/confirm"
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.attempt OnSubmitForm
 
 

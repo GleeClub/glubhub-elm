@@ -3,18 +3,13 @@ port module Utils exposing
     , RemoteData(..)
     , SubmissionState(..)
     , alert
-    , apiUrl
     , checkSubmissionResult
-    , decodeId
-    , deleteRequest
     , deployEditor
     , eventIsOver
     , formatPhone
     , fullName
     , getMemberName
-    , getRequest
     , goldColor
-    , handleJsonResponse
     , isActiveClass
     , isDisabledClass
     , isLoadingClass
@@ -23,8 +18,6 @@ port module Utils exposing
     , optionalSingleton
     , permittedTo
     , playPitch
-    , postRequest
-    , postRequestFull
     , rawHtml
     , remoteToMaybe
     , resultToRemote
@@ -35,22 +28,17 @@ port module Utils exposing
     , setOldToken
     , setToken
     , submissionStateBoxId
-    , timeout
     )
 
 import Browser.Navigation as Nav
 import Color exposing (Color)
-import Error exposing (GreaseError, parseResponse)
+import Error exposing (GreaseError)
 import Html exposing (Html, i, text)
 import Html.Parser
 import Html.Parser.Util
-import Http
-import Json.Decode as Decode exposing (Decoder)
-import Json.Encode as Encode
 import List.Extra exposing (find)
 import Models.Event exposing (Event, Member)
 import Models.Info exposing (Info, Semester)
-import Task exposing (Task)
 import Time exposing (Posix, Zone, posixToMillis)
 
 
@@ -58,19 +46,9 @@ import Time exposing (Posix, Zone, posixToMillis)
 ---- CONSTANTS ----
 
 
-apiUrl : String
-apiUrl =
-    "https://gleeclub.gatech.edu/cgi-bin/api"
-
-
 goldColor : Color
 goldColor =
     Color.rgb 0.706 0.643 0.412
-
-
-timeout : Maybe Float
-timeout =
-    Just (1000 * 20)
 
 
 submissionStateBoxId : String
@@ -184,76 +162,6 @@ checkSubmissionResult model result =
             ( { model | state = ErrorSending error }
             , scrollToElement submissionStateBoxId
             )
-
-
-getRequest : { a | token : String } -> String -> Decoder b -> Task GreaseError b
-getRequest { token } url decoder =
-    Http.task
-        { method = "GET"
-        , url = apiUrl ++ url
-        , body = Http.emptyBody
-        , headers = [ Http.header "token" token ]
-        , resolver = Http.stringResolver <| parseResponse decoder
-        , timeout = timeout
-        }
-
-
-postRequestFull : { a | token : String } -> String -> Encode.Value -> Decoder b -> Task GreaseError b
-postRequestFull { token } url body decoder =
-    Http.task
-        { method = "POST"
-        , url = apiUrl ++ url
-        , body = Http.jsonBody body
-        , headers = [ Http.header "token" token ]
-        , resolver = Http.stringResolver <| parseResponse decoder
-        , timeout = timeout
-        }
-
-
-postRequest : { a | token : String } -> String -> Encode.Value -> Task GreaseError ()
-postRequest common url body =
-    postRequestFull common url body (Decode.succeed ())
-
-
-deleteRequest : { a | token : String } -> String -> Task GreaseError ()
-deleteRequest { token } url =
-    Http.task
-        { method = "DELETE"
-        , url = apiUrl ++ url
-        , body = Http.emptyBody
-        , headers = [ Http.header "token" token ]
-        , resolver = Http.stringResolver <| parseResponse (Decode.succeed ())
-        , timeout = timeout
-        }
-
-
-handleJsonResponse : Decoder a -> Http.Response String -> Result Http.Error a
-handleJsonResponse decoder response =
-    case response of
-        Http.BadUrl_ url ->
-            Err (Http.BadUrl url)
-
-        Http.Timeout_ ->
-            Err Http.Timeout
-
-        Http.BadStatus_ { statusCode } _ ->
-            Err (Http.BadStatus statusCode)
-
-        Http.NetworkError_ ->
-            Err Http.NetworkError
-
-        Http.GoodStatus_ _ body ->
-            case Decode.decodeString decoder body of
-                Err _ ->
-                    Err (Http.BadBody body)
-
-                Ok result ->
-                    Ok result
-
-
-decodeId : Decoder Int
-decodeId =
-    Decode.field "id" Decode.int
 
 
 eventIsOver : Common -> Event -> Bool

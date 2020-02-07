@@ -9,9 +9,10 @@ import Html.Attributes exposing (class, style)
 import Html.Events exposing (onSubmit)
 import Http.Detailed exposing (Error(..))
 import Json.Encode as Encode
+import Request
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequest)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert)
 
 
 
@@ -84,7 +85,7 @@ requestPasswordReset model =
         url =
             "/forgot_password/" ++ model.email
     in
-    postRequest { token = "" } url (Encode.object [])
+    Request.post { token = "" } url (Encode.object [])
         |> Task.attempt OnSubmitForgotPassword
 
 

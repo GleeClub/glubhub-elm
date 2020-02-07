@@ -79,7 +79,7 @@ button data =
                 |> Maybe.map onClick
                 |> Maybe.withDefault (disabled True)
     in
-    element (class fullClass :: click :: otherAttrs)
+    element ([ class fullClass, click, type_ "button" ] ++ otherAttrs)
         [ text data.content ]
 
 

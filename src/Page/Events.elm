@@ -20,9 +20,10 @@ import Page.Events.Details as Details
 import Page.Events.EditEvent as EditEvent
 import Page.Events.RequestAbsence exposing (requestAbsence)
 import Page.Events.Setlist as Setlist
+import Request
 import Route exposing (EventRoute, EventTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), alert, eventIsOver, getRequest, mapLoaded, permittedTo, postRequest)
+import Utils exposing (Common, RemoteData(..), alert, eventIsOver, mapLoaded, permittedTo)
 
 
 
@@ -299,7 +300,7 @@ submitAbsenceRequest common reason eventId =
         body =
             Encode.object [ ( "reason", Encode.string reason ) ]
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.attempt OnRequestAbsence
 
 
@@ -314,7 +315,7 @@ loadEvent common eventId tab =
                 eventDecoder
                 (Decode.succeed tab)
     in
-    getRequest common url decoder
+    Request.get common url decoder
         |> Task.attempt OnLoadEvent
 
 
@@ -326,7 +327,7 @@ loadEvents common route =
                 (Decode.list <| eventDecoder)
                 (Decode.succeed route)
     in
-    getRequest common "/events?attendance=true" decoder
+    Request.get common "/events?attendance=true" decoder
         |> Task.attempt OnLoadEvents
 
 

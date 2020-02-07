@@ -8,11 +8,12 @@ import Html exposing (Html, a, div, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Models.Event exposing (Grades, Member, SimpleAttendance, gradesDecoder)
+import Models.Event exposing (Event, Grades, Member, SimpleAttendance, gradesDecoder)
 import Models.Info exposing (Enrollment(..))
+import Request
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, resultToRemote)
 
 
 
@@ -59,17 +60,17 @@ update msg model =
             let
                 gradesMapper grades =
                     { grades
-                        | changes =
-                            grades.changes
+                        | eventsWithChanges =
+                            grades.eventsWithChanges
                                 |> List.map gradeChangeMapper
                     }
 
-                gradeChangeMapper gradeChange =
-                    if gradeChange.event.id == eventId then
-                        { gradeChange | attendance = attendance }
+                gradeChangeMapper event =
+                    if event.id == eventId then
+                        { event | attendance = Just attendance }
 
                     else
-                        gradeChange
+                        event
             in
             ( { model
                 | state = Sending
@@ -95,7 +96,7 @@ loadAttendance common member =
         url =
             "/members/" ++ member.email ++ "?grades=true"
     in
-    getRequest common url (Decode.field "grades" gradesDecoder)
+    Request.get common url (Decode.field "grades" gradesDecoder)
 
 
 updateAttendance : Common -> Int -> Member -> SimpleAttendance -> Cmd Msg
@@ -104,7 +105,7 @@ updateAttendance common eventId member attendance =
         url =
             "/events/" ++ String.fromInt eventId ++ "/attendance/" ++ member.email
     in
-    postRequest common url (serializeAttendance attendance)
+    Request.post common url (serializeAttendance attendance)
         |> Task.andThen (\_ -> loadAttendance common member)
         |> Task.attempt OnUpdateEventAttendance
 
@@ -144,56 +145,75 @@ profileAttendance common grades =
                  , "Did Attend?"
                  , "Mins Late"
                  , "Point Change"
-                 , "PartialScore"
+                 , "Partial Score"
                  , "Rationale"
                  ]
                     |> List.map (\column -> th [] [ text column ])
                 )
 
-        gradeChangeRow change =
+        eventWithChangesRow change =
             tr [ class "no-bottom-border" ]
-                (gradeChangeRowValues change
+                (eventWithChangesRowValues change
                     |> List.map (\cell -> td [] [ cell ])
                 )
 
-        gradeChangeRowValues change =
+        eventWithChangesRowValues : Event -> List (Html Msg)
+        eventWithChangesRowValues event =
             let
                 attendance =
-                    change.attendance
+                    event.attendance
+                        |> Maybe.withDefault
+                            { shouldAttend = False
+                            , didAttend = False
+                            , confirmed = False
+                            , minutesLate = 0
+                            }
             in
-            [ text (change.event.callTime |> Datetime.dateFormatter common.timeZone)
-            , a [ Route.href <| Route.Events { id = Just change.event.id, tab = Nothing } ] [ text change.event.name ]
-            , text change.event.type_
+            [ text (event.callTime |> Datetime.dateFormatter common.timeZone)
+            , a [ Route.href <| Route.Events { id = Just event.id, tab = Nothing } ] [ text event.name ]
+            , text event.type_
             , checkboxInput
                 { content = ""
                 , isChecked = attendance.shouldAttend
                 , onChange =
                     \shouldAttend ->
-                        UpdateEventAttendance change.event.id { attendance | shouldAttend = shouldAttend }
+                        UpdateEventAttendance event.id { attendance | shouldAttend = shouldAttend }
                 }
             , checkboxInput
                 { content = ""
                 , isChecked = attendance.didAttend
                 , onChange =
                     \didAttend ->
-                        UpdateEventAttendance change.event.id { attendance | didAttend = didAttend }
+                        UpdateEventAttendance event.id { attendance | didAttend = didAttend }
                 }
             , textInput Forms.int
                 { value = Just attendance.minutesLate
                 , onInput =
                     \minutesLate ->
-                        UpdateEventAttendance change.event.id
+                        UpdateEventAttendance event.id
                             { attendance | minutesLate = minutesLate |> Maybe.withDefault 0 }
                 , attrs = [ Forms.Placeholder "0" ]
                 }
-            , text (change.change |> String.fromFloat)
-            , text (change.partialScore |> String.fromFloat)
-            , text change.reason
+            , text
+                (event.gradeChange
+                    |> Maybe.map (.change >> String.fromFloat)
+                    |> Maybe.withDefault ""
+                )
+            , text
+                (event.gradeChange
+                    |> Maybe.map (.partialScore >> String.fromFloat)
+                    |> Maybe.withDefault ""
+                )
+            , text
+                (event.gradeChange
+                    |> Maybe.map .reason
+                    |> Maybe.withDefault ""
+                )
             ]
     in
     table [ class "table" ]
         [ thead []
             [ headerRow ]
         , tbody []
-            (grades.changes |> List.map gradeChangeRow)
+            (grades.eventsWithChanges |> List.map eventWithChangesRow)
         ]

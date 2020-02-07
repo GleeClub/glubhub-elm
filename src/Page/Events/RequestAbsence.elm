@@ -4,7 +4,6 @@ import Components.Basics as Basics
 import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (textareaInput)
 import Html exposing (Html, br, div)
-import Html.Attributes exposing (style)
 import Models.Event exposing (Event)
 
 
@@ -19,12 +18,12 @@ type alias RequestAbsence msg =
 
 requestAbsence : RequestAbsence msg -> Html msg
 requestAbsence data =
-    div [ style "text-align" "center" ]
+    div []
         [ Buttons.back
             { content = "back to event"
             , onClick = data.cancel
             }
-        , Basics.title "Absence Request"
+        , Basics.centeredTitle "Absence Request"
         , Basics.subtitle <| "for " ++ data.event.name
         , br [] []
         , Basics.form data.submit

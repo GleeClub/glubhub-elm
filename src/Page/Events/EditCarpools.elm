@@ -9,10 +9,22 @@ import Html.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (find, uncons)
-import Models.Event exposing (Event, EventAttendee, EventCarpool, Member, SimpleAttendance, UpdatedCarpool, eventAttendeeDecoder, eventCarpoolDecoder, eventDecoder)
+import Models.Event
+    exposing
+        ( Event
+        , EventAttendee
+        , EventCarpool
+        , Member
+        , SimpleAttendance
+        , UpdatedCarpool
+        , eventAttendeeDecoder
+        , eventCarpoolDecoder
+        , eventDecoder
+        )
+import Request
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), alert, fullName, getRequest, mapLoaded, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), alert, fullName, mapLoaded, resultToRemote)
 
 
 
@@ -412,13 +424,13 @@ loadData common eventId =
             eventUrl ++ "/carpools"
 
         getEvent =
-            getRequest common eventUrl eventDecoder
+            Request.get common eventUrl eventDecoder
 
         getAttendance =
-            getRequest common attendanceUrl (Decode.list eventAttendeeDecoder)
+            Request.get common attendanceUrl (Decode.list eventAttendeeDecoder)
 
         getCarpools =
-            getRequest common carpoolUrl (Decode.list eventCarpoolDecoder)
+            Request.get common carpoolUrl (Decode.list eventCarpoolDecoder)
                 |> Task.map cleanupCarpools
     in
     Task.attempt OnLoadData <| Task.map3 CarpoolData getEvent getAttendance getCarpools
@@ -430,7 +442,7 @@ updateCarpools common data =
         url =
             "/events/" ++ String.fromInt data.event.id ++ "/carpools"
     in
-    postRequest common url (data.carpools |> Encode.list serializeCarpool)
+    Request.post common url (data.carpools |> Encode.list serializeCarpool)
         |> Task.attempt OnSaveCarpools
 
 
@@ -553,17 +565,14 @@ memberListAndCarpools model data =
                         [ Buttons.link
                             { content = "Cancel"
                             , route = Route.Events { id = Just data.event.id, tab = Nothing }
-                            , attrs = []
+                            , attrs = [ Buttons.CustomAttrs [ class "is-pulled-left" ] ]
                             }
-                        , Buttons.group
-                            { alignment = Buttons.AlignRight
-                            , connected = False
-                            , buttons =
-                                [ Buttons.button
-                                    { content = "Update Carpools"
-                                    , onClick = Just SaveCarpools
-                                    , attrs = [ Buttons.Color Buttons.IsPrimary ]
-                                    }
+                        , Buttons.button
+                            { content = "Update Carpools"
+                            , onClick = Just SaveCarpools
+                            , attrs =
+                                [ Buttons.Color Buttons.IsPrimary
+                                , Buttons.CustomAttrs [ class "is-pulled-right" ]
                                 ]
                             }
                         ]

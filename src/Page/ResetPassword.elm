@@ -10,9 +10,10 @@ import Html.Events exposing (onSubmit)
 import Http.Detailed exposing (Error(..))
 import Json.Encode as Encode
 import MD5
+import Request
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequest)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert)
 
 
 
@@ -99,7 +100,7 @@ resetPassword model =
                         |> Maybe.withDefault ""
                    )
     in
-    postRequest { token = "" } url body
+    Request.post { token = "" } url body
         |> Task.attempt OnResetPassword
 
 

@@ -6,9 +6,10 @@ import Html exposing (Html, div, table, tbody, td, text, tr)
 import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Models.Song exposing (Song, pitchToUnicode, songDecoder)
+import Request
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), getRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), resultToRemote)
 
 
 
@@ -49,7 +50,7 @@ loadSetlist common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/setlist"
     in
-    getRequest common url (Decode.list songDecoder)
+    Request.get common url (Decode.list songDecoder)
         |> Task.attempt OnLoadSetlist
 
 

@@ -1,4 +1,21 @@
-module Permissions exposing (..)
+module Permissions exposing
+    ( createEvent
+    , deleteUser
+    , editCarpool
+    , editLinks
+    , editMinutes
+    , editOfficers
+    , editPermissions
+    , editRepertoire
+    , editSemester
+    , editTransaction
+    , editUniforms
+    , processAbsenceRequests
+    , processGigRequests
+    , switchUser
+    , viewCompleteMinutes
+    , viewEventPrivateDetails
+    )
 
 
 editRepertoire : String

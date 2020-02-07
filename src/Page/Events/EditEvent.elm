@@ -12,9 +12,10 @@ import Json.Encode as Encode
 import List.Extra as List
 import Models.Event exposing (Event, eventDecoder)
 import Models.Info exposing (Semester, Uniform, semesterDecoder)
+import Request
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, postRequest, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), resultToRemote)
 
 
 
@@ -192,7 +193,7 @@ update msg model =
 
 loadSemesters : Common -> Cmd Msg
 loadSemesters common =
-    getRequest common "/semesters" (Decode.list semesterDecoder)
+    Request.get common "/semesters" (Decode.list semesterDecoder)
         |> Task.attempt (ForSelf << OnLoadSemesters)
 
 
@@ -205,8 +206,8 @@ updateEvent model =
         body =
             serializeEventForm model.common model.event model.gig
     in
-    postRequest model.common url body
-        |> Task.andThen (\_ -> getRequest model.common url eventDecoder)
+    Request.post model.common url body
+        |> Task.andThen (\_ -> Request.get model.common url eventDecoder)
         |> Task.attempt (ForSelf << OnUpdateEvent)
 
 

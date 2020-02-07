@@ -2,31 +2,22 @@ module Page.Repertoire exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
 import Components.Buttons as Buttons
+import Components.DeleteModal exposing (deleteModal)
 import Components.SelectableList exposing (selectableListFull)
 import Error exposing (GreaseResult)
-import Html exposing (Html, div, section, td, text)
+import Html exposing (Html, div, i, p, section, td, text)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import List.Extra as List
 import Models.Song exposing (Pitch, Song, halfStepsAboveA, songDecoder)
 import Page.Repertoire.EditSong as EditSong
 import Page.Repertoire.SongSidebar exposing (songSidebar)
 import Permissions
+import Request
 import Route
 import Task
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , decodeId
-        , getRequest
-        , mapLoaded
-        , playPitch
-        , postRequestFull
-        , remoteToMaybe
-        , resultToRemote
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, playPitch, remoteToMaybe, resultToRemote)
 
 
 
@@ -37,7 +28,8 @@ type alias Model =
     { common : Common
     , songs : RemoteData (List Song)
     , selected : RemoteData ( Song, Maybe EditSong.Model )
-    , createSongState : SubmissionState
+    , createState : SubmissionState
+    , deleteState : Maybe SubmissionState
     }
 
 
@@ -55,7 +47,8 @@ init common maybeSongId =
     ( { common = common
       , songs = Loading
       , selected = selected
-      , createSongState = NotSentYet
+      , createState = NotSentYet
+      , deleteState = Nothing
       }
     , Cmd.batch <| loadSongs common :: toLoadSong
     )
@@ -77,6 +70,10 @@ type Msg
     | PlayPitch Pitch
     | CreateSong
     | OnCreateSong (GreaseResult Song)
+    | TryToDeleteSong
+    | CancelDeleteSong
+    | DeleteSong
+    | OnDeleteSong (GreaseResult Int)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -156,25 +153,55 @@ update msg model =
             )
 
         UnselectSong ->
-            ( { model | selected = NotAsked }, Cmd.none )
+            ( { model | selected = NotAsked }
+            , Route.replaceUrl model.common.key <| Route.Repertoire Nothing
+            )
 
         PlayPitch pitch ->
             ( model, playPitch (halfStepsAboveA pitch) )
 
         CreateSong ->
-            ( { model | createSongState = Sending }, createSong model.common )
+            ( { model | createState = Sending }, createSong model.common )
 
         OnCreateSong (Ok song) ->
             ( { model
-                | createSongState = NotSentYet
+                | createState = NotSentYet
                 , songs = model.songs |> mapLoaded ((::) song)
                 , selected = Loaded ( song, Just <| EditSong.init model.common song )
               }
-            , Cmd.none
+            , Route.replaceUrl model.common.key <| Route.Repertoire <| Just song.id
             )
 
         OnCreateSong (Err error) ->
-            ( { model | createSongState = ErrorSending error }, Cmd.none )
+            ( { model | createState = ErrorSending error }, Cmd.none )
+
+        OnDeleteSong (Ok songId) ->
+            ( { model
+                | songs =
+                    model.songs
+                        |> mapLoaded (List.filterNot (\s -> s.id == songId))
+                , deleteState = Nothing
+                , selected = NotAsked
+              }
+            , Route.replaceUrl model.common.key <| Route.Repertoire Nothing
+            )
+
+        OnDeleteSong (Err error) ->
+            ( { model | deleteState = Just <| ErrorSending error }, Cmd.none )
+
+        TryToDeleteSong ->
+            ( { model | deleteState = Just NotSentYet }, Cmd.none )
+
+        CancelDeleteSong ->
+            ( { model | deleteState = Nothing }, Cmd.none )
+
+        DeleteSong ->
+            case model.selected of
+                Loaded ( song, _ ) ->
+                    ( { model | deleteState = Just Sending }, deleteSong model.common song.id )
+
+                _ ->
+                    ( model, Cmd.none )
 
 
 editSongTranslator : EditSong.Translator Msg
@@ -191,7 +218,7 @@ editSongTranslator =
 
 loadSongs : Common -> Cmd Msg
 loadSongs common =
-    getRequest common "/repertoire" (Decode.list songDecoder)
+    Request.get common "/repertoire" (Decode.list songDecoder)
         |> Task.attempt OnLoadSongs
 
 
@@ -201,7 +228,7 @@ loadSong common songId =
         url =
             "/repertoire/" ++ String.fromInt songId ++ "?details=true"
     in
-    getRequest common url songDecoder
+    Request.get common url songDecoder
         |> Task.attempt OnLoadSong
 
 
@@ -214,17 +241,31 @@ createSong common =
                 ]
 
         songCreator =
-            Utils.postRequestFull common "/repertoire" body Utils.decodeId
+            Request.postReturningId common "/repertoire" body
 
         songUrl id =
             "/repertoire/" ++ String.fromInt id
 
         songLoader id =
-            getRequest common (songUrl id) songDecoder
+            Request.get common (songUrl id) songDecoder
     in
     songCreator
         |> Task.andThen songLoader
         |> Task.attempt OnCreateSong
+
+
+deleteSong : Common -> Int -> Cmd Msg
+deleteSong common songId =
+    let
+        url =
+            "/repertoire/" ++ String.fromInt songId
+    in
+    Request.delete common url
+        |> Task.attempt
+            (\result ->
+                OnDeleteSong
+                    (result |> Result.map (\_ -> songId))
+            )
 
 
 
@@ -254,7 +295,7 @@ view model =
         [ Basics.section
             [ Basics.container
                 [ Basics.columns
-                    [ songList model "Current" (Just model.createSongState) currentSongsFilter
+                    [ songList model "Current" (Just model.createState) currentSongsFilter
                     , songList model "A-G" Nothing otherAToGFilter
                     , songList model "H-P" Nothing otherHToPFilter
                     , songList model "Q-Z" Nothing otherQToZFilter
@@ -283,8 +324,15 @@ view model =
                     , song = model.selected |> mapLoaded Tuple.first
                     , close = UnselectSong
                     , edit = OpenEditSong
+                    , tryToDelete = TryToDeleteSong
                     , playPitch = PlayPitch
                     }
+        , case ( model.selected, model.deleteState ) of
+            ( Loaded ( song, _ ), Just state ) ->
+                deleteSongModal song state
+
+            _ ->
+                text ""
         ]
 
 
@@ -337,3 +385,20 @@ createSongButton common state =
                 _ ->
                     text ""
             ]
+
+
+deleteSongModal : Song -> SubmissionState -> Html Msg
+deleteSongModal song state =
+    deleteModal
+        { title = "Are you sure you want to delete " ++ song.title ++ "?"
+        , cancel = CancelDeleteSong
+        , confirm = DeleteSong
+        , state = state
+        , content =
+            div []
+                [ p []
+                    [ text <| "Are you sure you want to delete " ++ song.title ++ "?" ]
+                , p []
+                    [ i [] [ text "It'll be gong like Varys' dong." ] ]
+                ]
+        }

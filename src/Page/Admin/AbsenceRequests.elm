@@ -10,20 +10,11 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import Models.Admin exposing (AbsenceRequest, AbsenceRequestState(..), absenceRequestDecoder)
 import Models.Event exposing (Event, eventDecoder)
+import Request
 import Route
 import Task
 import Time exposing (posixToMillis)
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , checkSubmissionResult
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , resultToRemote
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, mapLoaded, resultToRemote)
 
 
 
@@ -111,7 +102,7 @@ loadAbsenceRequests common =
                 (Decode.index 0 absenceRequestDecoder)
                 (Decode.index 1 eventDecoder)
     in
-    getRequest common "/absence_requests" (Decode.list decodeTuple)
+    Request.get common "/absence_requests" (Decode.list decodeTuple)
         |> Task.attempt OnLoadAbsenceRequests
 
 
@@ -133,7 +124,7 @@ respondToAbsenceRequest common approved absenceRequest =
             ]
                 |> String.join "/"
     in
-    postRequest common url (Encode.object [])
+    Request.post common url (Encode.object [])
         |> Task.attempt OnRespondToAbsenceRequest
 
 

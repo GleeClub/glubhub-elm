@@ -5,15 +5,16 @@ import Components.Basics as Basics
 import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (textInput)
 import Error exposing (GreaseError(..), GreaseResult)
-import Html exposing (Html, div, form, img)
+import Html exposing (Html, br, div, form, img)
 import Html.Attributes exposing (class, src, style)
 import Http.Detailed exposing (Error(..))
 import Json.Decode exposing (field, string)
 import Json.Encode as Encode
 import MD5
+import Request
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequestFull, setToken)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert, setToken)
 
 
 
@@ -90,7 +91,7 @@ submitLogin model =
                 , ( "passHash", Encode.string passHash )
                 ]
     in
-    postRequestFull { token = "" } "/login" loginJson (field "token" string)
+    Request.postFull { token = "" } "/login" loginJson (field "token" string)
         |> Task.attempt OnSubmitLogin
 
 
@@ -110,13 +111,13 @@ view model =
             [ class "columns is-centered is-vcentered"
             , style "display" "flex"
             ]
-            [ Basics.form Submit
-                [ Basics.narrowColumn
-                    [ Basics.box
+            [ Basics.narrowColumn
+                [ Basics.box
+                    [ Basics.form Submit
                         [ logo
                         , emailField model
                         , passwordField model
-                        , actionButtons model
+                        , div [] (actionButtons model)
                         ]
                     ]
                 ]
@@ -135,8 +136,7 @@ emailField model =
         { value = model.email
         , onInput = UpdateEmail
         , attrs =
-            [ Forms.Title "E-mail"
-            , Forms.Horizontal
+            [ Forms.Title "Who are you?"
             , Forms.Placeholder "gburdell3@gatech.edu"
             ]
         }
@@ -148,35 +148,40 @@ passwordField model =
         { value = model.password
         , onInput = UpdatePassword
         , attrs =
-            [ Forms.Title "Password"
-            , Forms.Horizontal
+            [ Forms.Title "Oh yeah? Prove it."
             , Forms.Placeholder "••••••••"
             ]
         }
 
 
-actionButtons : Model -> Html Msg
+actionButtons : Model -> List (Html Msg)
 actionButtons model =
-    Buttons.group
-        { alignment = Buttons.AlignRight
-        , connected = False
-        , buttons =
+    [ Buttons.submit
+        { content = "I posit that I am worthy"
+        , attrs =
+            [ Buttons.Color Buttons.IsPrimary
+            , Buttons.IsLoading (model.state == Sending)
+            , Buttons.CustomAttrs [ class "is-fullwidth" ]
+            ]
+        }
+    , br [] []
+    , div [ class "field is-grouped is-grouped-centered is-expanded" ]
+        [ div [ class "control" ]
             [ Buttons.link
-                { content = "Register"
-                , route = Route.EditProfile
-                , attrs = []
-                }
-            , Buttons.link
-                { content = "Forgot"
+                { content = "I have forgotten who I am"
                 , route = Route.ForgotPassword
                 , attrs = []
                 }
-            , Buttons.submit
-                { content = "Sign In"
+            ]
+        , div [ class "control" ]
+            [ Buttons.link
+                { content = "I am not anyone yet"
+                , route = Route.EditProfile
                 , attrs =
-                    [ Buttons.Color Buttons.IsPrimary
-                    , Buttons.IsLoading (model.state == Sending)
+                    [ Buttons.IsOutlined
+                    , Buttons.Color Buttons.IsPrimary
                     ]
                 }
             ]
-        }
+        ]
+    ]

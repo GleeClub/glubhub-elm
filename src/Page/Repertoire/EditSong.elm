@@ -25,20 +25,9 @@ import Models.Song
         , songModeToString
         )
 import Page.Repertoire.Links exposing (songLinkButtonWithDelete)
+import Request
 import Task exposing (Task)
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , decodeId
-        , deleteRequest
-        , getRequest
-        , postRequest
-        , postRequestFull
-        , scrollToElement
-        , submissionStateBoxId
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), scrollToElement, submissionStateBoxId)
 
 
 
@@ -314,7 +303,7 @@ updateSong common song =
         url =
             "/repertoire/" ++ String.fromInt song.id
     in
-    postRequest common url body
+    Request.post common url body
         |> Task.attempt (\result -> ForSelf <| OnUpdateSong (result |> Result.map (\_ -> Nothing)))
 
 
@@ -349,7 +338,7 @@ loadSongLink common linkId =
         url =
             "/repertoire/links/" ++ String.fromInt linkId
     in
-    getRequest common url songLinkDecoder
+    Request.get common url songLinkDecoder
 
 
 deleteSongLink : Common -> Int -> Cmd Msg
@@ -358,7 +347,7 @@ deleteSongLink common linkId =
         url =
             "/repertoire/links/" ++ String.fromInt linkId
     in
-    deleteRequest common url
+    Request.delete common url
         |> Task.attempt
             (\result ->
                 ForSelf <|
@@ -380,7 +369,7 @@ uploadPerformance common songId name linkUrl =
             "/repertoire/" ++ String.fromInt songId ++ "/links"
 
         createLink =
-            postRequestFull common url body decodeId
+            Request.postReturningId common url body
     in
     createLink
         |> Task.andThen (loadSongLink common)
@@ -415,7 +404,7 @@ uploadLinkWithFile type_ common songId linkName file =
             "/repertoire/" ++ String.fromInt songId ++ "/links"
 
         createLink =
-            postRequestFull common url body decodeId
+            Request.postReturningId common url body
     in
     uploadFile common file
         |> Task.andThen (\_ -> createLink)
@@ -440,7 +429,7 @@ uploadFile common file =
                 ]
     in
     serializeFile file
-        |> Task.andThen (\f -> postRequest common url (body f))
+        |> Task.andThen (\f -> Request.post common url (body f))
 
 
 serializeFile : File -> Task x Encode.Value

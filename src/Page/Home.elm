@@ -12,9 +12,10 @@ import List.Extra exposing (last)
 import Maybe.Extra exposing (filter, isJust, isNothing)
 import Models.Event exposing (Event, eventDecoder)
 import Models.Info exposing (Enrollment)
+import Request
 import Task
 import Time exposing (Zone)
-import Utils exposing (Common, RemoteData(..), eventIsOver, getRequest, resultToRemote, romanNumeral, roundToTwoDigits)
+import Utils exposing (Common, RemoteData(..), eventIsOver, resultToRemote, romanNumeral, roundToTwoDigits)
 
 
 
@@ -74,7 +75,7 @@ update msg model =
 
 loadEvents : Common -> Cmd Msg
 loadEvents common =
-    getRequest common "/events?full=true" (Decode.list eventDecoder)
+    Request.get common "/events?full=true" (Decode.list eventDecoder)
         |> Task.attempt OnLoadEvents
 
 

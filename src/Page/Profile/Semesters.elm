@@ -7,8 +7,9 @@ import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Models.Event exposing (ActiveSemester, Member, activeSemesterDecoder)
 import Models.Info exposing (Enrollment(..), enrollmentToString)
+import Request
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, resultToRemote, roundToTwoDigits)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), resultToRemote, roundToTwoDigits)
 
 
 
@@ -50,7 +51,7 @@ loadSemesters common member =
         decoder =
             Decode.field "semesters" (Decode.list activeSemesterDecoder)
     in
-    getRequest common url decoder
+    Request.get common url decoder
         |> Task.attempt OnLoadSemesters
 
 

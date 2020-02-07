@@ -9,19 +9,9 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List exposing (groupWhile)
 import Models.Event exposing (EventAttendee, SimpleAttendance, eventAttendeeDecoder)
+import Request
 import Task
-import Utils
-    exposing
-        ( Common
-        , RemoteData(..)
-        , SubmissionState(..)
-        , fullName
-        , getRequest
-        , mapLoaded
-        , postRequest
-        , resultToRemote
-        , resultToSubmissionState
-        )
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, mapLoaded, resultToRemote, resultToSubmissionState)
 
 
 
@@ -91,7 +81,7 @@ loadAttendees common eventId =
         url =
             "/events/" ++ String.fromInt eventId ++ "/see_whos_attending"
     in
-    getRequest common url (Decode.list eventAttendeeDecoder)
+    Request.get common url (Decode.list eventAttendeeDecoder)
         |> Task.attempt OnLoadAttendance
 
 
@@ -104,7 +94,7 @@ updateAttendance common eventId attendee =
                 ++ "/attendance/"
                 ++ attendee.member.email
     in
-    postRequest common url (serializeAttendance attendee.attendance)
+    Request.post common url (serializeAttendance attendee.attendance)
         |> Task.attempt OnUpdateAttendance
 
 

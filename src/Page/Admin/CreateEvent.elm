@@ -5,17 +5,18 @@ import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (checkboxInput, radioInput, selectInput, textInput, textareaInput)
 import Datetime exposing (hyphenDateFormatter, parseFormDateAndTimeString, twentyFourHourTimeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, br, div, form)
+import Html exposing (Html, br, div, form, text)
 import Html.Events exposing (onSubmit)
-import Json.Decode as Decode exposing (field, string)
+import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra as List
 import Models.Admin exposing (GigRequest, gigRequestDecoder)
 import Models.Info exposing (Semester, Uniform, semesterDecoder)
+import Request
 import Route
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), getRequest, mapLoaded, postRequestFull, resultToRemote)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), mapLoaded, resultToRemote)
 
 
 
@@ -305,7 +306,7 @@ update msg model =
 
 loadSemesters : Common -> Cmd Msg
 loadSemesters common =
-    getRequest common "/semesters" (Decode.list semesterDecoder)
+    Request.get common "/semesters" (Decode.list semesterDecoder)
         |> Task.attempt OnLoadSemesters
 
 
@@ -315,7 +316,7 @@ loadGigRequest common gigRequestId =
         url =
             "/gig_requests/" ++ String.fromInt gigRequestId
     in
-    getRequest common url gigRequestDecoder
+    Request.get common url gigRequestDecoder
         |> Task.attempt OnLoadGigRequest
 
 
@@ -325,13 +326,13 @@ createEventFromGigRequest common createForm requestId =
         url =
             "/gig_requests/" ++ String.fromInt requestId ++ "/create_event"
     in
-    postRequestFull common url (serializeEventForm common createForm) (Decode.field "id" Decode.int)
+    Request.postReturningId common url (serializeEventForm common createForm)
         |> Task.attempt OnCreateEvent
 
 
 createEvent : Common -> CreateEventForm -> Cmd Msg
 createEvent common createForm =
-    postRequestFull common "/events" (serializeEventForm common createForm) (Decode.field "id" Decode.int)
+    Request.postReturningId common "/events" (serializeEventForm common createForm)
         |> Task.attempt OnCreateEvent
 
 
@@ -388,18 +389,18 @@ view model =
         [ Basics.title "Create Event"
         , Basics.box
             [ model.createForm
-                |> Basics.remoteContent (createEventForm model.common model.semesters)
+                |> Basics.remoteContent (createEventForm model)
             ]
         ]
 
 
-createEventForm : Common -> RemoteData (List Semester) -> CreateEventForm -> Html Msg
-createEventForm common semesters createForm =
+createEventForm : Model -> CreateEventForm -> Html Msg
+createEventForm model createForm =
     form [ onSubmit CreateEvent ]
         [ Basics.columns
             [ leftColumnInEventForm createForm
-            , middleColumnInEventForm common semesters createForm
-            , rightColumnInEventForm createForm
+            , middleColumnInEventForm model.common model.semesters createForm
+            , rightColumnInEventForm createForm model.state
             ]
         ]
 
@@ -534,8 +535,8 @@ middleColumnInEventForm common remoteSemesters createForm =
         ]
 
 
-rightColumnInEventForm : CreateEventForm -> Html Msg
-rightColumnInEventForm createForm =
+rightColumnInEventForm : CreateEventForm -> SubmissionState -> Html Msg
+rightColumnInEventForm createForm state =
     let
         newEvent =
             createForm.newEvent
@@ -611,7 +612,13 @@ rightColumnInEventForm createForm =
                , br [] []
                , Buttons.submit
                     { content = "Yeehaw"
-                    , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                    , attrs = [ Buttons.Color Buttons.IsPrimary, Buttons.IsLoading (state == Sending) ]
                     }
+               , case state of
+                    ErrorSending error ->
+                        Basics.errorBox error
+
+                    _ ->
+                        text ""
                ]
         )

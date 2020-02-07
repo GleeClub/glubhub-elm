@@ -9,14 +9,15 @@ import Html exposing (Html, a, b, br, button, div, i, p, span, text, u)
 import Html.Attributes exposing (attribute, class, href, style, target)
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Maybe.Extra exposing (isNothing)
+import Maybe.Extra as Maybe exposing (isNothing)
 import Models.Admin exposing (AbsenceRequestState(..))
 import Models.Event exposing (Event, Gig, SimpleAttendance)
 import Models.Info exposing (Uniform)
 import Permissions
+import Request
 import Route exposing (EventTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, postRequest)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver)
 
 
 
@@ -157,7 +158,7 @@ rsvp common eventId attending =
         emptyBody =
             Encode.object []
     in
-    Utils.postRequest common url emptyBody
+    Request.post common url emptyBody
         |> Task.attempt
             (\result ->
                 ForSelf <|
@@ -175,7 +176,7 @@ confirm common eventId =
         emptyBody =
             Encode.object []
     in
-    postRequest common url emptyBody
+    Request.post common url emptyBody
         |> Task.attempt
             (\result ->
                 ForSelf <|
@@ -190,7 +191,7 @@ deleteEvent common eventId =
         url =
             "/events/" ++ String.fromInt eventId
     in
-    deleteRequest common url
+    Request.delete common url
         |> Task.attempt (ForSelf << OnDeleteEvent)
 
 
@@ -319,10 +320,12 @@ rsvpActions isSending attendance =
                 { content = content
                 , onClick = Just <| ForSelf <| Rsvp attending
                 , attrs =
-                    [ Buttons.Color Buttons.IsPrimary
-                    , Buttons.IsOutlined
-                    , Buttons.IsLoading isSending
+                    [ Just <| Buttons.Color Buttons.IsPrimary
+                    , Just <| Buttons.IsLoading isSending
+                    , Just Buttons.IsOutlined
+                        |> Maybe.filter (\_ -> not attending)
                     ]
+                        |> List.filterMap identity
                 }
     in
     case ( attendance.confirmed, attendance.shouldAttend ) of

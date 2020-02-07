@@ -33,6 +33,7 @@ import Error exposing (GreaseError(..))
 import Html exposing (Html, a, article, div, h1, h3, h4, i, p, span, text)
 import Html.Attributes exposing (attribute, class, hidden, href, id, style)
 import Html.Events exposing (onClick, onSubmit)
+import Maybe.Extra as Maybe
 import Models.Event exposing (Event)
 import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, formatPhone, permittedTo, submissionStateBoxId)
 
@@ -158,46 +159,40 @@ divider content =
 
 attendanceIcon : Common -> Event -> Html msg
 attendanceIcon common event =
-    let
-        shouldAttend =
-            event.attendance
-                |> Maybe.map .shouldAttend
-                |> Maybe.withDefault False
+    case
+        event.attendance
+            |> Maybe.filter (\_ -> not (event |> eventIsOver common))
+    of
+        Nothing ->
+            text ""
 
-        confirmed =
-            event.attendance
-                |> Maybe.map .confirmed
-                |> Maybe.withDefault False
+        Just attendance ->
+            let
+                tooltipText =
+                    (if attendance.confirmed then
+                        "confirmed"
 
-        tooltipText =
-            (if confirmed then
-                "confirmed"
+                     else
+                        "unconfirmed"
+                    )
+                        ++ ", "
+                        ++ (if attendance.shouldAttend then
+                                "attending"
 
-             else
-                "unconfirmed"
-            )
-                ++ ", "
-                ++ (if shouldAttend then
-                        "attending"
+                            else
+                                "not attending"
+                           )
+
+                ( color, success ) =
+                    if attendance.confirmed then
+                        ( "has-text-success", attendance.shouldAttend )
 
                     else
-                        "not attending"
-                   )
-
-        ( color, success ) =
-            if confirmed then
-                ( "has-text-success", shouldAttend )
-
-            else
-                ( "has-text-grey", shouldAttend )
-    in
-    if event |> eventIsOver common then
-        text ""
-
-    else
-        div
-            (class color :: class "is-tooltip-right" :: tooltip tooltipText)
-            [ checkOrCross success ]
+                        ( "has-text-grey", attendance.shouldAttend )
+            in
+            div
+                (class color :: class "is-tooltip-right" :: tooltip tooltipText)
+                [ checkOrCross success ]
 
 
 remoteContentFull : Html msg -> (a -> Html msg) -> RemoteData a -> Html msg

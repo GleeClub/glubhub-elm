@@ -1,4 +1,35 @@
-module Models.Event exposing (..)
+module Models.Event exposing
+    ( ActiveSemester
+    , Attendance
+    , Event
+    , EventAttendance
+    , EventAttendee
+    , EventCarpool
+    , Gig
+    , GradeChange
+    , Grades
+    , Member
+    , MemberPermission
+    , MemberRole
+    , SimpleAttendance
+    , SimpleGradeChange
+    , UpdatedCarpool
+    , activeSemesterDecoder
+    , attendanceDecoder
+    , defaultSimpleAttendance
+    , eventAttendanceDecoder
+    , eventAttendeeDecoder
+    , eventCarpoolDecoder
+    , eventDecoder
+    , gigDecoder
+    , gradeChangeDecoder
+    , gradesDecoder
+    , memberDecoder
+    , memberPermissionDecoder
+    , memberRoleDecoder
+    , simpleAttendanceDecoder
+    , simpleGradeChangeDecoder
+    )
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
@@ -72,7 +103,7 @@ eventDecoder =
         |> custom (Decode.value |> Decode.andThen gigChecker)
         |> optional "rsvpIssue" (nullable string) Nothing
         |> optional "attendance" (nullable simpleAttendanceDecoder) Nothing
-        |> optional "gradeChange" (nullable simpleGradeChangeDecoder) Nothing
+        |> optional "change" (nullable simpleGradeChangeDecoder) Nothing
         |> optional "absenceRequest" (nullable absenceRequestDecoder) Nothing
 
 
@@ -161,8 +192,8 @@ type alias EventAttendee =
 eventAttendeeDecoder : Decoder EventAttendee
 eventAttendeeDecoder =
     Decode.succeed EventAttendee
-        |> custom memberDecoder
-        |> custom simpleAttendanceDecoder
+        |> required "member" memberDecoder
+        |> required "attendance" simpleAttendanceDecoder
 
 
 type alias SimpleAttendance =
@@ -217,8 +248,8 @@ type alias UpdatedCarpool =
 
 type alias Grades =
     { grade : Float
+    , eventsWithChanges : List Event
     , volunteerGigsAttended : Int
-    , changes : List GradeChange
     }
 
 
@@ -226,8 +257,8 @@ gradesDecoder : Decoder Grades
 gradesDecoder =
     Decode.succeed Grades
         |> required "grade" float
+        |> required "eventsWithChanges" (Decode.list eventDecoder)
         |> required "volunteerGigsAttended" int
-        |> required "changes" (Decode.list gradeChangeDecoder)
 
 
 type alias GradeChange =
