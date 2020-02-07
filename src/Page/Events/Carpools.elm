@@ -1,14 +1,16 @@
 module Page.Events.Carpools exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Error exposing (GreaseResult)
 import Html exposing (Html, b, br, div, li, text, ul)
 import Html.Attributes exposing (style)
 import Json.Decode as Decode
 import Models.Event exposing (EventCarpool, eventCarpoolDecoder)
+import Permissions
 import Route
 import Task
-import Utils exposing (Common, RemoteData(..), fullName, getRequest, permittedTo, resultToRemote)
+import Utils exposing (Common, RemoteData(..), fullName, getRequest, resultToRemote)
 
 
 
@@ -25,11 +27,6 @@ type alias Model =
 init : Common -> Int -> ( Model, Cmd Msg )
 init common eventId =
     ( { common = common, eventId = eventId, carpools = Loading }, loadCarpools common eventId )
-
-
-canEditCarpools : String
-canEditCarpools =
-    "edit-carpool"
 
 
 
@@ -68,23 +65,17 @@ loadCarpools common eventId =
 view : Model -> Html Msg
 view model =
     let
-        ableToEditCarpools =
-            model.common.user
-                |> Maybe.map (permittedTo canEditCarpools)
-                |> Maybe.withDefault False
-
-        maybeEditButton =
-            if ableToEditCarpools then
-                Basics.linkButton "Edit Carpools" (Route.EditCarpools model.eventId)
-
-            else
-                text ""
-
         render carpools =
             div []
                 [ carpoolList carpools
                 , div [ style "padding" "10px" ]
-                    [ maybeEditButton ]
+                    [ Basics.renderIfHasPermission model.common Permissions.editCarpool <|
+                        Buttons.link
+                            { content = "Edit Carpools"
+                            , route = Route.EditCarpools model.eventId
+                            , attrs = []
+                            }
+                    ]
                 ]
     in
     model.carpools |> Basics.remoteContent render

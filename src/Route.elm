@@ -1,4 +1,22 @@
-module Route exposing (AdminTab(..), EventRoute, EventTab(..), MinutesRoute, MinutesTab(..), Route(..), adminTabString, eventTabString, fromUrl, href, loadPage, minutesTabString, parser, replaceUrl, routeToString)
+module Route exposing
+    ( AdminTab(..)
+    , EventRoute
+    , EventTab(..)
+    , MinutesRoute
+    , MinutesTab(..)
+    , ProfileRoute
+    , ProfileTab(..)
+    , Route(..)
+    , adminTabString
+    , eventTabString
+    , fromUrl
+    , href
+    , loadPage
+    , minutesTabString
+    , parser
+    , replaceUrl
+    , routeToString
+    )
 
 import Browser.Navigation as Nav
 import Html exposing (Attribute)
@@ -15,7 +33,7 @@ type Route
     = Home
     | Login
     | Roster
-    | Profile String
+    | Profile ProfileRoute
     | EditProfile
     | Events EventRoute
     | EditCarpools Int
@@ -35,6 +53,12 @@ type alias EventRoute =
 type alias MinutesRoute =
     { id : Maybe Int
     , tab : Maybe MinutesTab
+    }
+
+
+type alias ProfileRoute =
+    { email : String
+    , tab : Maybe ProfileTab
     }
 
 
@@ -136,6 +160,48 @@ minutesTabParser tab =
             Nothing
 
 
+type ProfileTab
+    = ProfileDetails
+    | ProfileMoney
+    | ProfileAttendance
+    | ProfileSemesters
+
+
+profileTabString : ProfileTab -> String
+profileTabString tab =
+    case tab of
+        ProfileDetails ->
+            "details"
+
+        ProfileMoney ->
+            "money"
+
+        ProfileAttendance ->
+            "attendance"
+
+        ProfileSemesters ->
+            "semesters"
+
+
+profileTabParser : String -> Maybe ProfileTab
+profileTabParser tab =
+    case tab of
+        "details" ->
+            Just ProfileDetails
+
+        "money" ->
+            Just ProfileMoney
+
+        "attendance" ->
+            Just ProfileAttendance
+
+        "semesters" ->
+            Just ProfileSemesters
+
+        _ ->
+            Nothing
+
+
 type AdminTab
     = AdminCreateEvent (Maybe Int)
     | AdminGigRequest
@@ -229,8 +295,9 @@ parser =
         [ Parser.map Home Parser.top
         , Parser.map Login (s "login")
         , Parser.map Roster (s "roster")
-        , Parser.map Profile (s "profile" </> string)
         , Parser.map EditProfile (s "profile")
+        , Parser.map (\email -> Profile { email = email, tab = Nothing }) (s "profile" </> string)
+        , Parser.map (\email tab -> Profile { email = email, tab = Just tab }) (s "profile" </> string </> custom "profileTab" profileTabParser)
 
         -- /events, /events/{id}, and /events/{id}/{tab}
         , Parser.map (Events { id = Nothing, tab = Nothing }) (s "events")
@@ -302,8 +369,13 @@ routeToString page =
                 Roster ->
                     [ "roster" ]
 
-                Profile email ->
-                    [ "profile", email ]
+                Profile { email, tab } ->
+                    case tab of
+                        Nothing ->
+                            [ "profile", email ]
+
+                        Just t ->
+                            [ "profile", email, profileTabString t ]
 
                 EditProfile ->
                     [ "profile" ]

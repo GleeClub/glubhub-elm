@@ -2,6 +2,7 @@ module Models.Event exposing (..)
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
 import Json.Decode.Pipeline exposing (custom, optional, required)
+import Models.Admin exposing (AbsenceRequest, absenceRequestDecoder)
 import Models.Info
     exposing
         ( Enrollment
@@ -31,6 +32,7 @@ type alias Event =
     , rsvpIssue : Maybe String
     , attendance : Maybe SimpleAttendance
     , gradeChange : Maybe SimpleGradeChange
+    , absenceRequest : Maybe AbsenceRequest
     }
 
 
@@ -71,6 +73,7 @@ eventDecoder =
         |> optional "rsvpIssue" (nullable string) Nothing
         |> optional "attendance" (nullable simpleAttendanceDecoder) Nothing
         |> optional "gradeChange" (nullable simpleGradeChangeDecoder) Nothing
+        |> optional "absenceRequest" (nullable absenceRequestDecoder) Nothing
 
 
 type alias SimpleGradeChange =
@@ -213,10 +216,8 @@ type alias UpdatedCarpool =
 
 
 type alias Grades =
-    { finalGrade : Float
+    { grade : Float
     , volunteerGigsAttended : Int
-    , gigRequirement : Int
-    , semesterIsFinished : Bool
     , changes : List GradeChange
     }
 
@@ -224,16 +225,14 @@ type alias Grades =
 gradesDecoder : Decoder Grades
 gradesDecoder =
     Decode.succeed Grades
-        |> required "finalGrade" float
+        |> required "grade" float
         |> required "volunteerGigsAttended" int
-        |> required "gigRequirement" int
-        |> required "semesterIsFinished" bool
         |> required "changes" (Decode.list gradeChangeDecoder)
 
 
 type alias GradeChange =
     { event : Event
-    , attendance : Attendance
+    , attendance : SimpleAttendance
     , reason : String
     , change : Float
     , partialScore : Float
@@ -244,7 +243,7 @@ gradeChangeDecoder : Decoder GradeChange
 gradeChangeDecoder =
     Decode.succeed GradeChange
         |> required "event" eventDecoder
-        |> required "attendance" attendanceDecoder
+        |> required "attendance" simpleAttendanceDecoder
         |> required "reason" string
         |> required "change" float
         |> required "partialScore" float
@@ -272,7 +271,6 @@ type alias Member =
     , enrollment : Maybe Enrollment
     , permissions : List MemberPermission
     , positions : List String
-    , grades : Maybe Grades
     }
 
 
@@ -300,7 +298,6 @@ memberDecoder =
         |> optional "enrollment" enrollmentDecoder Nothing
         |> optional "permissions" (Decode.list memberPermissionDecoder) []
         |> optional "positions" (Decode.list string) []
-        |> optional "grades" (nullable gradesDecoder) Nothing
 
 
 type alias MemberPermission =

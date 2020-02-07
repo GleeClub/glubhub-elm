@@ -128,8 +128,17 @@ div.spinner i {
 .vertheader {
   writing-mode: sideways-lr;
   width: 20px;
+  margin-left: -35px;
 }
 
 tr.no-bottom-border td {
   border-bottom: 0px;
+}
+
+table.no-bottom-border td {
+  border-bottom: 0px;
+}
+
+table.is-hoverable tr.not-hoverable:hover {
+  background-color: #fff;
 }

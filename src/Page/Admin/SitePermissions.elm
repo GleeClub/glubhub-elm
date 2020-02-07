@@ -1,14 +1,12 @@
 module Page.Admin.SitePermissions exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Forms exposing (checkboxInput)
 import Error exposing (GreaseResult)
-import Html exposing (Html, div, input, table, tbody, td, text, th, tr)
-import Html.Attributes exposing (checked, class, style, type_)
-import Html.Events exposing (onCheck)
+import Html exposing (Html, div, table, tbody, td, text, th, tr)
+import Html.Attributes exposing (class, style)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
-import List.Extra exposing (find)
-import Maybe.Extra exposing (isJust)
 import Models.Admin exposing (RolePermission, rolePermissionDecoder)
 import Models.Info exposing (Permission, PermissionType(..))
 import Route exposing (AdminTab(..))
@@ -38,7 +36,7 @@ init common =
 
 type Msg
     = OnLoadPermissions (GreaseResult (List RolePermission))
-    | TogglePermission RolePermission
+    | TogglePermission RolePermission Bool
     | OnTogglePermission (GreaseResult ())
 
 
@@ -51,10 +49,18 @@ update msg model =
         OnTogglePermission result ->
             checkSubmissionResult model result
 
-        TogglePermission permission ->
+        TogglePermission permission checked ->
             case model.permissions of
                 Loaded permissions ->
-                    if permissions |> find (permissionsAreEqual permission) |> isJust then
+                    if checked then
+                        ( { model
+                            | permissions = Loaded (permissions ++ [ permission ])
+                            , state = Sending
+                          }
+                        , enablePermission model.common permission
+                        )
+
+                    else
                         ( { model
                             | permissions =
                                 Loaded
@@ -64,14 +70,6 @@ update msg model =
                             , state = Sending
                           }
                         , disablePermission model.common permission
-                        )
-
-                    else
-                        ( { model
-                            | permissions = Loaded (permissions ++ [ permission ])
-                            , state = Sending
-                          }
-                        , enablePermission model.common permission
                         )
 
                 _ ->
@@ -219,13 +217,11 @@ permissionName p eventType =
 permissionCheckbox : List RolePermission -> RolePermission -> Html Msg
 permissionCheckbox currentPermissions rolePermission =
     td (Basics.tooltip rolePermission.role)
-        [ input
-            [ type_ "checkbox"
-            , onCheck (\_ -> TogglePermission rolePermission)
-            , checked
-                (currentPermissions
+        [ checkboxInput
+            { content = ""
+            , onChange = \checked -> TogglePermission rolePermission checked
+            , isChecked =
+                currentPermissions
                     |> List.any (permissionsAreEqual rolePermission)
-                )
-            ]
-            []
+            }
         ]

@@ -1,18 +1,28 @@
 module Page.Admin.GigRequests exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Datetime exposing (dateFormatter, timeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, br, button, div, i, p, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, colspan, disabled, href, style)
-import Html.Events exposing (onClick)
+import Html exposing (Html, br, button, div, i, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, colspan, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Models.Admin exposing (GigRequest, GigRequestStatus(..), gigRequestDecoder)
 import Route
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), checkSubmissionResult, formatPhone, getRequest, mapLoaded, postRequest, resultToRemote)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , checkSubmissionResult
+        , getRequest
+        , mapLoaded
+        , postRequest
+        , resultToRemote
+        )
 
 
 
@@ -143,26 +153,26 @@ view model =
         requests =
             model.requests
                 |> mapLoaded (List.sortBy (.time >> posixToMillis))
-
-        openRequestFilter gigRequest =
-            gigRequest.status == GigRequestPending
-
-        closedRequestFilter gigRequest =
-            gigRequest.status /= GigRequestPending
     in
     div []
-        [ Basics.title "Open Gig Requests"
+        [ Basics.title "Gig Requests"
         , Basics.box
             [ requests
-                |> mapLoaded (List.filter openRequestFilter)
-                |> Basics.remoteContent (gigRequestTable model.common)
-            ]
-        , Basics.title "Closed Gig Requests"
-        , Basics.box
-            [ requests
-                |> mapLoaded (List.filter closedRequestFilter)
+                |> mapLoaded (List.filter (\r -> r.status == GigRequestPending))
                 |> Basics.remoteContent (gigRequestTable model.common)
             , model.state |> Basics.submissionStateBox
+            ]
+        , Basics.title "Accepted Gig Requests"
+        , Basics.box
+            [ requests
+                |> mapLoaded (List.filter (\r -> r.status == GigRequestAccepted))
+                |> Basics.remoteContent (gigRequestTable model.common)
+            ]
+        , Basics.title "Dismissed Gig Requests"
+        , Basics.box
+            [ requests
+                |> mapLoaded (List.filter (\r -> r.status == GigRequestDismissed))
+                |> Basics.remoteContent (gigRequestTable model.common)
             ]
         ]
 
@@ -209,11 +219,9 @@ singleGigRequest common gigRequest =
             , br [] []
             , text gigRequest.contactName
             , br [] []
-            , a [ href <| "tel:" ++ gigRequest.contactPhone ]
-                [ text <| formatPhone gigRequest.contactPhone ]
+            , Basics.phoneLink gigRequest.contactPhone
             , br [] []
-            , a [ href <| "mailto:" ++ gigRequest.contactEmail ]
-                [ text gigRequest.contactEmail ]
+            , Basics.emailLink gigRequest.contactEmail
             ]
         , td []
             [ i []
@@ -237,33 +245,43 @@ gigRequestButtons gigRequest =
         ( leftButton, rightButton ) =
             case gigRequest.status of
                 GigRequestPending ->
-                    ( ( [], "We do not deign", Just (DismissGigRequest gigRequest) )
-                    , ( [ class "oldgold" ], "We deign", Just (CreateEventForGigRequest gigRequest) )
+                    ( { content = "We do not deign"
+                      , onClick = Just <| DismissGigRequest gigRequest
+                      , attrs = []
+                      }
+                    , { content = "We deign"
+                      , onClick = Just <| CreateEventForGigRequest gigRequest
+                      , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                      }
                     )
 
                 GigRequestAccepted ->
-                    ( ( [], "Too late to go back now", Nothing )
-                    , ( [], "We deigned", gigRequest.event |> Maybe.map GoToEventForGigRequest )
+                    ( { content = "Too late to go back now"
+                      , onClick = Nothing
+                      , attrs = []
+                      }
+                    , { content = "We deigned"
+                      , onClick = gigRequest.event |> Maybe.map GoToEventForGigRequest
+                      , attrs = []
+                      }
                     )
 
                 GigRequestDismissed ->
-                    ( ( [], "We did not deign", Nothing )
-                    , ( [], "Hol up", Just (ReopenGigRequest gigRequest) )
+                    ( { content = "We did not deign"
+                      , onClick = Nothing
+                      , attrs = []
+                      }
+                    , { content = "Hol up"
+                      , onClick = Just <| ReopenGigRequest gigRequest
+                      , attrs = []
+                      }
                     )
     in
-    div [ class "field is-grouped is-grouped-right" ]
-        [ p [ class "control" ] [ gigRequestButton leftButton ]
-        , p [ class "control" ] [ gigRequestButton rightButton ]
-        ]
-
-
-gigRequestButton : ( List (Html.Attribute Msg), String, Maybe Msg ) -> Html Msg
-gigRequestButton ( attributes, content, maybeClickMsg ) =
-    button
-        ((class "button" :: attributes)
-            ++ (maybeClickMsg
-                    |> Maybe.map (\msg -> [ onClick msg ])
-                    |> Maybe.withDefault [ disabled True, style "font-style" "italic" ]
-               )
-        )
-        [ text content ]
+    Buttons.group
+        { alignment = Buttons.AlignRight
+        , connected = False
+        , buttons =
+            [ Buttons.button leftButton
+            , Buttons.button rightButton
+            ]
+        }

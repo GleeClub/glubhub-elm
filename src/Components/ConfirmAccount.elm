@@ -1,11 +1,15 @@
 module Components.ConfirmAccount exposing (Model, Msg, confirmAccountHeader, init, update, view)
 
 import Browser.Navigation as Nav
+import Components.Basics as Basics
+import Components.Buttons as Buttons
+import Components.Forms as Forms
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, button, div, form, h4, input, label, option, p, section, select, span, text)
-import Html.Attributes exposing (class, name, placeholder, selected, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html exposing (Html, div, form, section, span, text)
+import Html.Attributes exposing (class, style)
 import Json.Encode as Encode
+import List.Extra as List
+import Maybe.Extra as Maybe
 import Models.Info exposing (Enrollment(..), enrollmentToString)
 import Task
 import Utils exposing (Common, SubmissionState(..), postRequest)
@@ -25,7 +29,7 @@ confirmAccountHeader data =
         , style "padding-top" "40px"
         ]
         [ div [ class "notification is-info" ]
-            [ button [ class "delete", onClick data.ignoreConfirm ] []
+            [ Buttons.delete data.ignoreConfirm
             , div
                 [ style "width" "100%"
                 , style "display" "flex"
@@ -38,12 +42,16 @@ confirmAccountHeader data =
                     , text "can get you into the system."
                     ]
                 , div []
-                    [ a
-                        [ class "button is-info is-inverted is-outlined"
-                        , style "margin" "0 2em"
-                        , onClick data.confirmAccount
-                        ]
-                        [ text "Confirm" ]
+                    [ Buttons.button
+                        { content = "Confirm"
+                        , onClick = Just data.confirmAccount
+                        , attrs =
+                            [ Buttons.Color Buttons.IsInfo
+                            , Buttons.IsInverted
+                            , Buttons.IsOutlined
+                            , Buttons.CustomAttrs [ style "margin" "0 2em" ]
+                            ]
+                        }
                     ]
                 ]
             ]
@@ -140,96 +148,86 @@ view model =
         semesterForm =
             model.form
 
-        onCampusButton val title =
-            span
-                [ class <|
-                    "button"
-                        ++ (if model.form.onCampus == val then
-                                " is-primary"
+        onCampusButton onCampus title =
+            Buttons.button
+                { content = title
+                , onClick = Just <| UpdateForm { semesterForm | onCampus = onCampus }
+                , attrs =
+                    [ Just (Buttons.CustomElement span)
+                    , Just (Buttons.Color Buttons.IsPrimary)
+                        |> Maybe.filter (\_ -> model.form.onCampus == onCampus)
+                    ]
+                        |> List.filterMap identity
+                }
 
-                            else
-                                ""
-                           )
-                , onClick <| UpdateForm { semesterForm | onCampus = val }
-                ]
-                [ text title ]
+        enrollmentButton enrollment title =
+            Buttons.button
+                { content = title
+                , onClick = Just <| UpdateForm { semesterForm | enrollment = enrollment }
+                , attrs =
+                    [ Just (Buttons.CustomElement span)
+                    , Just (Buttons.Color Buttons.IsPrimary)
+                        |> Maybe.filter (\_ -> model.form.enrollment == enrollment)
+                    ]
+                        |> List.filterMap identity
+                }
 
-        enrollmentButton val title =
-            span
-                [ class <|
-                    "button"
-                        ++ (if model.form.enrollment == val then
-                                " is-primary"
-
-                            else
-                                ""
-                           )
-                , onClick <| UpdateForm { semesterForm | enrollment = val }
-                ]
-                [ text title ]
+        sectionFormType =
+            { toString = Maybe.withDefault "No Section"
+            , fromString = \s -> model.common.info.sections |> List.find ((==) s)
+            , textType = Forms.Text
+            }
     in
-    section [ class "section" ]
-        [ form [ onSubmit SubmitForm ]
-            [ h4 [ class "title is-4" ] [ text "Confirm Your Account" ]
-            , div [ class "field is-horizontal" ]
-                [ div [ class "field-label is-normal" ]
-                    [ label [ class "label" ] [ text "Location" ] ]
-                , div [ class "field-body" ]
-                    [ div [ class "field is-grouped" ]
-                        [ p [ class "control is-expanded" ]
-                            [ input
-                                [ class "input"
-                                , type_ "text"
-                                , name "location"
-                                , value model.form.location
-                                , placeholder "Glenn"
-                                , onInput (\location -> UpdateForm { semesterForm | location = location })
-                                ]
-                                []
-                            ]
-                        , p [ class "control" ]
-                            [ div [ class "buttons has-addons" ]
-                                [ onCampusButton True "On-campus"
-                                , onCampusButton False "Off-campus"
-                                ]
-                            ]
+    Basics.section
+        [ Basics.form SubmitForm
+            [ Basics.title4 "Confirm Your Account"
+            , Forms.inputWrapper [ Forms.Horizontal, Forms.Title "Location" ]
+                [ Forms.textInput Forms.string
+                    { value = model.form.location
+                    , onInput = \location -> UpdateForm { semesterForm | location = location }
+                    , attrs =
+                        [ Forms.Placeholder "Glenn"
+                        , Forms.RequiredField True
                         ]
+                    }
+                , Forms.control
+                    [ Buttons.group
+                        { alignment = Buttons.AlignLeft
+                        , connected = True
+                        , buttons =
+                            [ onCampusButton True "On-campus"
+                            , onCampusButton False "Off-campus"
+                            ]
+                        }
                     ]
                 ]
-            , div [ class "field is-horizontal" ]
-                [ div [ class "field-label is-normal" ]
-                    [ label [ class "label" ] [ text "Enrollment" ] ]
-                , div [ class "field-body" ]
-                    [ div [ class "field is-grouped" ]
-                        [ div [ class "control" ]
-                            [ div [ class "select" ]
-                                [ select [ onInput (\s -> UpdateForm { semesterForm | section = Just s }) ]
-                                    (model.common.info.sections
-                                        |> List.map
-                                            (\s ->
-                                                option
-                                                    [ value s
-                                                    , selected
-                                                        (model.form.section
-                                                            |> Maybe.map ((==) s)
-                                                            |> Maybe.withDefault False
-                                                        )
-                                                    ]
-                                                    [ text s ]
-                                            )
-                                    )
-                                ]
+            , Forms.inputWrapper [ Forms.Horizontal, Forms.Title "Enrollment" ]
+                [ Forms.selectInput sectionFormType
+                    { values = model.common.info.sections |> List.map Just
+                    , selected = model.form.section
+                    , onInput = \s -> UpdateForm { semesterForm | section = s }
+                    , attrs = []
+                    }
+                , Forms.control
+                    [ Buttons.group
+                        { alignment = Buttons.AlignLeft
+                        , connected = True
+                        , buttons =
+                            [ enrollmentButton Class "Class"
+                            , enrollmentButton Club "Club"
                             ]
-                        , div [ class "control" ]
-                            [ div [ class "buttons has-addons" ]
-                                [ enrollmentButton Class "Class"
-                                , enrollmentButton Club "Club"
-                                ]
-                            ]
-                        ]
+                        }
                     ]
                 ]
-            , div [ class "buttons is-right" ]
-                [ button [ type_ "submit", class "button is-primary" ] [ text "Save" ] ]
+            , Buttons.group
+                { alignment = Buttons.AlignRight
+                , connected = False
+                , buttons =
+                    [ Buttons.submit
+                        { content = "Save"
+                        , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                        }
+                    ]
+                }
             ]
         ]

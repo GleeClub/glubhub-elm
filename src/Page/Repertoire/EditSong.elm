@@ -1,13 +1,13 @@
 module Page.Repertoire.EditSong exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, fileInput, selectInput, textInput, textInputWithPrefix, textareaInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (checkboxInput, fileInput, selectInput, textInput, textareaInput)
 import Error exposing (GreaseError, GreaseResult)
 import File exposing (File)
-import Html exposing (Html, br, button, div, form, h2, h3, li, text, ul)
-import Html.Attributes exposing (class, name, style, type_)
+import Html exposing (Html, br, div, form, h2, h3, li, text, ul)
+import Html.Attributes exposing (class, name, style)
 import Html.Events exposing (onSubmit)
-import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List
 import Models.Song
@@ -16,12 +16,12 @@ import Models.Song
         , SongLink
         , SongMode(..)
         , allPitches
-        , pitchDecoder
         , pitchEncoder
-        , pitchToString
+        , pitchFromUnicode
+        , pitchToUnicode
         , songLinkDecoder
-        , songModeDecoder
         , songModeEncoder
+        , songModeFromString
         , songModeToString
         )
 import Page.Repertoire.Links exposing (songLinkButtonWithDelete)
@@ -140,9 +140,9 @@ type InternalMsg
     = UpdateSong Song
     | OnUpdateSong (GreaseResult (Maybe SongLink))
     | UpdateNewLinks NewLinks
-    | SelectSheetMusicFile (List File)
+    | SelectSheetMusicFile (Maybe File)
     | AddSheetMusic
-    | SelectMidiFile (List File)
+    | SelectMidiFile (Maybe File)
     | AddMidi
     | AddPerformance
     | DeleteSongLink Int
@@ -178,7 +178,7 @@ update msg model =
         UpdateNewLinks newLinks ->
             ( { model | newLinks = newLinks }, Cmd.none )
 
-        SelectSheetMusicFile files ->
+        SelectSheetMusicFile file ->
             let
                 sheetMusic =
                     model.newLinks.sheetMusic
@@ -189,10 +189,7 @@ update msg model =
             ( { model
                 | newLinks =
                     { newLinks
-                        | sheetMusic =
-                            { sheetMusic
-                                | file = List.head files
-                            }
+                        | sheetMusic = { sheetMusic | file = file }
                     }
               }
             , Cmd.none
@@ -201,7 +198,7 @@ update msg model =
         AddSheetMusic ->
             addSheetMusic model
 
-        SelectMidiFile files ->
+        SelectMidiFile file ->
             let
                 midi =
                     model.newLinks.midi
@@ -212,10 +209,7 @@ update msg model =
             ( { model
                 | newLinks =
                     { newLinks
-                        | midi =
-                            { midi
-                                | file = List.head files
-                            }
+                        | midi = { midi | file = file }
                     }
               }
             , Cmd.none
@@ -333,12 +327,12 @@ serializeSong song =
         , ( "current", Encode.bool song.current )
         , ( "key"
           , song.key
-                |> Maybe.map (pitchEncoder >> Encode.string)
+                |> Maybe.map pitchEncoder
                 |> Maybe.withDefault Encode.null
           )
         , ( "startingPitch"
           , song.startingPitch
-                |> Maybe.map (pitchEncoder >> Encode.string)
+                |> Maybe.map pitchEncoder
                 |> Maybe.withDefault Encode.null
           )
         , ( "mode"
@@ -471,38 +465,17 @@ view model =
         song =
             model.song
 
-        renderPitch pitch =
-            pitch
-                |> Maybe.map (\p -> ( pitchEncoder p, pitchToString p ))
-                |> Maybe.withDefault ( "", "?" )
+        pitchFormType =
+            { toString = Maybe.map pitchToUnicode >> Maybe.withDefault "?"
+            , fromString = pitchFromUnicode
+            , textType = Forms.Text
+            }
 
-        renderSongMode songMode =
-            let
-                str =
-                    songMode
-                        |> Maybe.map songModeToString
-                        |> Maybe.withDefault "(no mode)"
-            in
-            ( str, str )
-
-        parsePitch pitch =
-            Decode.decodeString pitchDecoder ("\"" ++ pitch ++ "\"")
-                |> Result.withDefault Nothing
-
-        parseSongMode songMode =
-            Decode.decodeString songModeDecoder ("\"" ++ songMode ++ "\"")
-                |> Result.toMaybe
-
-        pitchIsSelected currentPitch givenPitch =
-            case ( currentPitch, givenPitch ) of
-                ( Just currentKey, Just pitch ) ->
-                    currentKey == pitch
-
-                ( Nothing, Nothing ) ->
-                    True
-
-                _ ->
-                    False
+        songModeFormType =
+            { toString = Maybe.map songModeToString >> Maybe.withDefault "(no mode)"
+            , fromString = songModeFromString
+            , textType = Forms.Text
+            }
     in
     div [] <|
         [ h2
@@ -515,40 +488,32 @@ view model =
             , style "text-align" "center"
             ]
             [ text model.song.title ]
-        , textInput
-            { title = "Name of song"
-            , helpText = Nothing
-            , value = model.song.title
-            , placeholder = "Happy Birthday in 12/17"
-            , required = True
+        , textInput Forms.string
+            { value = model.song.title
             , onInput = \title -> ForSelf <| UpdateSong { song | title = title }
+            , attrs =
+                [ Forms.Title "Name of song"
+                , Forms.Placeholder "Happy Birthday in 12/17"
+                , Forms.RequiredField True
+                ]
             }
-        , selectInput
-            { title = "Tonic"
-            , helpText = Nothing
-            , loading = False
-            , values = Nothing :: (allPitches |> List.map Just)
-            , render = renderPitch
-            , onSelect = \pitch -> ForSelf <| UpdateSong { song | key = parsePitch pitch }
-            , selected = pitchIsSelected song.key
+        , selectInput pitchFormType
+            { values = Nothing :: (allPitches |> List.map Just)
+            , selected = song.key
+            , onInput = \pitch -> ForSelf <| UpdateSong { song | key = pitch }
+            , attrs = [ Forms.Title "Tonic" ]
             }
-        , selectInput
-            { title = "Mode"
-            , helpText = Nothing
-            , loading = False
-            , values = [ Nothing, Just Major, Just Minor ]
-            , render = renderSongMode
-            , onSelect = \songMode -> ForSelf <| UpdateSong { song | mode = parseSongMode songMode }
-            , selected = (==) song.mode
+        , selectInput songModeFormType
+            { values = [ Nothing, Just Major, Just Minor ]
+            , selected = song.mode
+            , onInput = \songMode -> ForSelf <| UpdateSong { song | mode = songMode }
+            , attrs = [ Forms.Title "Mode" ]
             }
-        , selectInput
-            { title = "Starting pitch (if different)"
-            , helpText = Nothing
-            , loading = False
-            , values = Nothing :: (allPitches |> List.map Just)
-            , render = renderPitch
-            , onSelect = \pitch -> ForSelf <| UpdateSong { song | startingPitch = parsePitch pitch }
-            , selected = pitchIsSelected song.startingPitch
+        , selectInput pitchFormType
+            { values = Nothing :: (allPitches |> List.map Just)
+            , selected = song.startingPitch
+            , onInput = \pitch -> ForSelf <| UpdateSong { song | startingPitch = pitch }
+            , attrs = [ Forms.Title "Starting pitch (if different)" ]
             }
         , checkboxInput
             { content = "Current Repertoire"
@@ -556,12 +521,12 @@ view model =
             , onChange = \current -> ForSelf <| UpdateSong { song | current = current }
             }
         , textareaInput
-            { title = "Comments"
-            , helpText = Nothing
-            , value = song.info |> Maybe.withDefault ""
-            , placeholder = "There are no soloists, communism wins!"
-            , required = False
+            { value = song.info |> Maybe.withDefault ""
             , onInput = \info -> ForSelf <| UpdateSong { song | info = Just info }
+            , attrs =
+                [ Forms.Title "Comments"
+                , Forms.Placeholder "There are no soloists, communism wins!"
+                ]
             }
         , ul [ style "list-style" "none", style "padding-bottom" "10px" ]
             ((editSheetMusic model
@@ -600,23 +565,24 @@ editSheetMusic model =
 
         newSongLink =
             form [ onSubmit <| ForSelf AddSheetMusic ]
-                [ textInput
-                    { title = "Sheet music name"
-                    , helpText = Nothing
-                    , value = sheetMusic.name
-                    , placeholder = "Happy Birthday - B1"
-                    , required = True
+                [ textInput Forms.string
+                    { value = sheetMusic.name
                     , onInput = \name -> ForSelf <| UpdateNewLinks { newLinks | sheetMusic = { sheetMusic | name = name } }
+                    , attrs =
+                        [ Forms.Title "Sheet music name"
+                        , Forms.Placeholder "Happy Birthday"
+                        , Forms.RequiredField True
+                        ]
                     }
                 , fileInput
-                    { title = "Sheet music file"
-                    , helpText = Nothing
-                    , file = sheetMusic.file
+                    { file = sheetMusic.file
                     , selectFile = ForSelf << SelectSheetMusicFile
+                    , attrs = [ Forms.Title "Sheet music file" ]
                     }
-                , button
-                    [ class "button", type_ "submit" ]
-                    [ text "Add sheet music" ]
+                , Buttons.submit
+                    { content = "Add sheet music"
+                    , attrs = []
+                    }
                 ]
     in
     header :: deletableLinks ++ [ br [] [], newSongLink ]
@@ -644,23 +610,24 @@ editMidis model =
 
         newSongLink =
             form [ onSubmit <| ForSelf AddMidi ]
-                [ textInput
-                    { title = "MIDI name"
-                    , helpText = Nothing
-                    , value = midi.name
-                    , placeholder = "Happy Birthday - B1"
-                    , required = True
+                [ textInput Forms.string
+                    { value = midi.name
                     , onInput = \name -> ForSelf <| UpdateNewLinks { newLinks | midi = { midi | name = name } }
+                    , attrs =
+                        [ Forms.Title "MIDI name"
+                        , Forms.Placeholder "Happy Birthday - B1"
+                        , Forms.RequiredField True
+                        ]
                     }
                 , fileInput
-                    { title = "MIDI file"
-                    , helpText = Nothing
-                    , file = midi.file
+                    { file = midi.file
                     , selectFile = ForSelf << SelectMidiFile
+                    , attrs = [ Forms.Title "MIDI file" ]
                     }
-                , button
-                    [ class "button", type_ "submit" ]
-                    [ text "Add MIDI" ]
+                , Buttons.submit
+                    { content = "Add MIDI"
+                    , attrs = []
+                    }
                 ]
     in
     header :: deletableLinks ++ [ br [] [], newSongLink ]
@@ -688,26 +655,29 @@ editPerformances model =
 
         newSongLink =
             form [ onSubmit <| ForSelf AddPerformance ]
-                [ textInput
-                    { title = "Performance name"
-                    , helpText = Nothing
-                    , value = performance.name
-                    , placeholder = "Happy Birthday, live from New York!"
-                    , required = True
+                [ textInput Forms.string
+                    { value = performance.name
                     , onInput = \name -> ForSelf <| UpdateNewLinks { newLinks | performance = { performance | name = name } }
+                    , attrs =
+                        [ Forms.Title "Performance name"
+                        , Forms.Placeholder "Happy Birthday, live from New York!"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , textInputWithPrefix
-                    { title = "Performance URL"
-                    , prefix = "https://youtu.be/"
-                    , helpText = Nothing
-                    , value = performance.url
-                    , placeholder = "dtER80sOjX4"
-                    , required = True
+                , textInput Forms.string
+                    { value = performance.url
                     , onInput = \url -> ForSelf <| UpdateNewLinks { newLinks | performance = { performance | url = url } }
+                    , attrs =
+                        [ Forms.Title "Performance URL"
+                        , Forms.Prefix "https://youtu.be/"
+                        , Forms.Placeholder "dtER80sOjX4"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , button
-                    [ class "button", type_ "submit" ]
-                    [ text "Add performance" ]
+                , Buttons.submit
+                    { content = "Add performance"
+                    , attrs = []
+                    }
                 ]
     in
     header :: deletableLinks ++ [ br [] [], newSongLink ]

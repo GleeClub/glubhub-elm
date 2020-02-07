@@ -1,16 +1,29 @@
 module Page.Admin.DocumentLinks exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (textInput)
 import Error exposing (GreaseResult)
-import Html exposing (Html, b, button, div, input, span, table, td, text, tr)
-import Html.Attributes exposing (attribute, class, placeholder, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput)
+import Html exposing (Html, b, button, div, span, table, td, text, tr)
+import Html.Attributes exposing (style)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (removeAt, setAt)
 import Models.Info exposing (DocumentLink, documentLinkDecoder)
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , deleteRequest
+        , getRequest
+        , mapLoaded
+        , postRequest
+        , remoteToMaybe
+        , resultToRemote
+        , resultToSubmissionState
+        )
 
 
 
@@ -49,7 +62,6 @@ type Msg
     = OnLoadLinks (GreaseResult (List DocumentLink))
     | OnChangeLink (GreaseResult ())
     | UpdateLink DocumentLink Int
-    | SendLinkUpdate Int
     | DeleteLink Int
     | InputNewName String
     | InputNewUrl String
@@ -66,15 +78,12 @@ update msg model =
             ( { model | state = resultToSubmissionState result }, Cmd.none )
 
         UpdateLink link linkIndex ->
-            ( { model | links = model.links |> mapLoaded (setAt linkIndex link) }, Cmd.none )
-
-        SendLinkUpdate index ->
-            case model |> findLink index of
-                Just link ->
-                    ( { model | state = Sending }, updateDocumentLink model.common link )
-
-                Nothing ->
-                    ( model, Cmd.none )
+            ( { model
+                | links = model.links |> mapLoaded (setAt linkIndex link)
+                , state = Sending
+              }
+            , updateDocumentLink model.common link
+            )
 
         DeleteLink index ->
             case ( model |> findLink index, model.links ) of
@@ -111,12 +120,9 @@ update msg model =
 
 findLink : Int -> Model -> Maybe DocumentLink
 findLink index model =
-    case model.links of
-        Loaded links ->
-            links |> List.Extra.getAt index
-
-        _ ->
-            Nothing
+    model.links
+        |> remoteToMaybe
+        |> Maybe.andThen (List.Extra.getAt index)
 
 
 loadDocumentLinks : Common -> Cmd Msg
@@ -180,7 +186,10 @@ documentLinkTable newLink allLinks =
             allLinks |> List.indexedMap linkRow
 
         newHeaderRow =
-            tr [] [ td [] [ b [] [ text "New" ] ] ]
+            tr []
+                [ td []
+                    [ b [] [ text "New" ] ]
+                ]
     in
     table [ style "border-spacing" "5px", style "border-collapse" "separate" ]
         (linkRows ++ [ newHeaderRow, newLinkRow newLink ])
@@ -194,25 +203,15 @@ linkRow index link =
                 [ text <| link.name ]
             ]
         , td []
-            [ input
-                [ type_ "text"
-                , class "input"
-                , value link.url
-                , placeholder "URL"
-                , onInput (\url -> UpdateLink { link | url = url } index)
-                , onBlur (SendLinkUpdate index)
-                ]
-                []
+            [ textInput Forms.string
+                { value = link.url
+                , onInput = \url -> UpdateLink { link | url = url } index
+                , attrs = [ Forms.Placeholder "URL" ]
+                }
             ]
         , td []
             [ span [ style "display" "inline-block", style "vertical-align" "middle" ]
-                [ button
-                    [ class "delete"
-                    , attribute "aria-label" "delete"
-                    , onClick (DeleteLink index)
-                    ]
-                    []
-                ]
+                [ Buttons.delete (DeleteLink index) ]
             ]
         ]
 
@@ -221,27 +220,24 @@ newLinkRow : DocumentLink -> Html Msg
 newLinkRow newLink =
     tr []
         [ td []
-            [ input
-                [ type_ "text"
-                , class "input"
-                , value newLink.name
-                , placeholder "Name"
-                , onInput InputNewName
-                ]
-                []
+            [ textInput Forms.string
+                { value = newLink.name
+                , onInput = InputNewName
+                , attrs = [ Forms.Placeholder "Name" ]
+                }
             ]
         , td []
-            [ input
-                [ type_ "text"
-                , class "input"
-                , value newLink.url
-                , placeholder "URL"
-                , onInput InputNewUrl
-                ]
-                []
+            [ textInput Forms.string
+                { value = newLink.url
+                , onInput = InputNewUrl
+                , attrs = [ Forms.Placeholder "URL" ]
+                }
             ]
         , td []
-            [ button [ class "button", onClick CreateNewLink ]
-                [ text "sí" ]
+            [ Buttons.button
+                { content = "sí"
+                , onClick = Just CreateNewLink
+                , attrs = []
+                }
             ]
         ]

@@ -12,12 +12,14 @@ module Models.Song exposing
     , halfStepsAboveA
     , pitchDecoder
     , pitchEncoder
-    , pitchToString
+    , pitchFromUnicode
+    , pitchToUnicode
     , songDecoder
     , songLinkDecoder
     , songLinkSectionDecoder
     , songModeDecoder
     , songModeEncoder
+    , songModeFromString
     , songModeToString
     )
 
@@ -96,6 +98,19 @@ songModeToString mode =
 
         Minor ->
             "Minor"
+
+
+songModeFromString : String -> Maybe SongMode
+songModeFromString mode =
+    case mode of
+        "Major" ->
+            Just Major
+
+        "Minor" ->
+            Just Minor
+
+        _ ->
+            Nothing
 
 
 songModeDecoder : Decoder SongMode
@@ -227,7 +242,7 @@ pitchDecoder =
             )
 
 
-pitchEncoder : Pitch -> String
+pitchEncoder : Pitch -> Encode.Value
 pitchEncoder pitch =
     let
         base =
@@ -264,11 +279,11 @@ pitchEncoder pitch =
                 Sharp ->
                     "Sharp"
     in
-    base ++ accidental
+    Encode.string <| base ++ accidental
 
 
-pitchToString : Pitch -> String
-pitchToString pitch =
+pitchToUnicode : Pitch -> String
+pitchToUnicode pitch =
     let
         base =
             case pitch.base of
@@ -305,6 +320,52 @@ pitchToString pitch =
                     "♯"
     in
     base ++ accidental
+
+
+pitchFromUnicode : String -> Maybe Pitch
+pitchFromUnicode pitch =
+    let
+        base =
+            case pitch |> String.slice 0 1 of
+                "A" ->
+                    Just A
+
+                "B" ->
+                    Just B
+
+                "C" ->
+                    Just C
+
+                "D" ->
+                    Just D
+
+                "E" ->
+                    Just E
+
+                "F" ->
+                    Just F
+
+                "G" ->
+                    Just G
+
+                _ ->
+                    Nothing
+
+        accidental =
+            case pitch |> String.dropLeft 1 of
+                "" ->
+                    Just Natural
+
+                "Flat" ->
+                    Just Flat
+
+                "Sharp" ->
+                    Just Sharp
+
+                _ ->
+                    Nothing
+    in
+    Maybe.map2 Pitch base accidental
 
 
 halfStepsAboveA : Pitch -> Int

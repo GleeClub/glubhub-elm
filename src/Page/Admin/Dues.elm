@@ -1,20 +1,21 @@
 module Page.Admin.Dues exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, fieldWrapper, numberInputWithPrefix, selectInput, textInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (checkboxInput, inputWrapper, selectInput, textInput)
 import Datetime exposing (..)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, b, br, button, div, h1, h3, input, label, li, p, span, table, tbody, td, text, tr, ul)
-import Html.Attributes exposing (attribute, class, style, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html exposing (Html, a, b, br, button, div, h1, h3, li, p, table, tbody, td, text, tr, ul)
+import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import List.Extra as List
 import Models.Admin exposing (Fee, feeDecoder)
 import Models.Event exposing (Member)
 import Models.Info exposing (Transaction, transactionDecoder)
 import Task
 import Time exposing (posixToMillis)
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, isLoadingClass, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
 
 
 
@@ -74,7 +75,7 @@ init common =
 type Msg
     = OnLoadFees (GreaseResult (List Fee))
     | OnLoadTransactions (GreaseResult (List Transaction))
-    | UpdateFeeAmount Fee String
+    | UpdateFeeAmount Fee Int
     | OnUpdateFee (GreaseResult ())
     | ChangeTab (Maybe DuesTab)
     | ChargeDues
@@ -114,29 +115,24 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        UpdateFeeAmount fee stringAmount ->
-            case stringAmount |> String.toInt of
-                Nothing ->
-                    ( model, Cmd.none )
+        UpdateFeeAmount fee amount ->
+            let
+                updatedFee =
+                    { fee | amount = amount }
 
-                Just amount ->
-                    let
-                        updatedFee =
-                            { fee | amount = amount }
+                feeMapper f =
+                    if f.name == fee.name then
+                        updatedFee
 
-                        feeMapper f =
-                            if f.name == fee.name then
-                                updatedFee
-
-                            else
-                                f
-                    in
-                    ( { model
-                        | fees = model.fees |> mapLoaded (List.map feeMapper)
-                        , feeState = Sending
-                      }
-                    , updateFeeAmount model.common updatedFee
-                    )
+                    else
+                        f
+            in
+            ( { model
+                | fees = model.fees |> mapLoaded (List.map feeMapper)
+                , feeState = Sending
+              }
+            , updateFeeAmount model.common updatedFee
+            )
 
         ChargeDues ->
             ( { model | tab = Just <| AssignDues Sending }
@@ -171,7 +167,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnSendTransactionBatch (Ok _) ->
-            ( { model | tab = Nothing }, Cmd.none )
+            ( { model | tab = Nothing, transactions = Loading }, loadTransactions model.common )
 
         OnSendTransactionBatch (Err error) ->
             case model.tab of
@@ -309,13 +305,6 @@ view model =
 feeActionButtons : Html Msg
 feeActionButtons =
     let
-        actionButton buttonText tab =
-            button
-                [ class "button is-primary"
-                , onClick <| ChangeTab <| Just tab
-                ]
-                [ text buttonText ]
-
         allButtons =
             [ ( "Assign everyone dues", AssignDues NotSentYet )
             , ( "Make remaining dues late", AssignLateDues NotSentYet )
@@ -327,35 +316,29 @@ feeActionButtons =
             |> List.map
                 (\( name, tab ) ->
                     li [ style "margin-bottom" "10px" ]
-                        [ actionButton name tab ]
+                        [ Buttons.button
+                            { content = name
+                            , onClick = Just <| ChangeTab <| Just tab
+                            , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                            }
+                        ]
                 )
         )
 
 
 feeList : List Fee -> Html Msg
 feeList fees =
-    table [ style "border-spacing" "5px", style "border-collapse" "separate" ]
+    div []
         (fees |> List.map singleFee)
 
 
 singleFee : Fee -> Html Msg
 singleFee fee =
-    tr []
-        [ td [ style "padding-right" "10px" ]
-            [ span [ style "display" "inline-block", style "vertical-align" "middle" ]
-                [ label [ attribute "for" fee.name ] [ text fee.description ] ]
-            ]
-        , td []
-            [ input
-                [ type_ "number"
-                , class "input"
-                , attribute "name" fee.name
-                , value <| String.fromInt fee.amount
-                , onInput (UpdateFeeAmount fee)
-                ]
-                []
-            ]
-        ]
+    textInput Forms.int
+        { value = Just fee.amount
+        , onInput = \amount -> UpdateFeeAmount fee (amount |> Maybe.withDefault 0)
+        , attrs = [ Forms.Horizontal, Forms.Title fee.name ]
+        }
 
 
 transactionTable : Common -> SubmissionState -> List Transaction -> Html Msg
@@ -384,20 +367,20 @@ transactionRow common transaction =
         ( statusText, actionButton ) =
             if transaction.resolved then
                 ( "Resolved"
-                , button
-                    [ class "button is-small"
-                    , onClick (ResolveTransaction transaction.id False)
-                    ]
-                    [ text "Unresolve" ]
+                , Buttons.button
+                    { content = "Unresolve"
+                    , onClick = Just <| ResolveTransaction transaction.id False
+                    , attrs = [ Buttons.Size Buttons.Small ]
+                    }
                 )
 
             else
                 ( "Outstanding"
-                , button
-                    [ class "button is-small is-primary"
-                    , onClick (ResolveTransaction transaction.id True)
-                    ]
-                    [ text "Resolve" ]
+                , Buttons.button
+                    { content = "Resolve"
+                    , onClick = Just <| ResolveTransaction transaction.id True
+                    , attrs = [ Buttons.Size Buttons.Small, Buttons.Color Buttons.IsPrimary ]
+                    }
                 )
     in
     [ text (transaction.time |> Datetime.simpleDateWithYearFormatter common.timeZone)
@@ -420,24 +403,30 @@ beholdThe content =
 
 cancelButton : Html Msg
 cancelButton =
-    a
-        [ class "button is-pulled-right"
-        , onClick <| ChangeTab Nothing
-        ]
-        [ text "ABORT! ABORT!" ]
+    Buttons.button
+        { content = "ABORT! ABORT!"
+        , onClick = Just <| ChangeTab Nothing
+        , attrs =
+            [ Buttons.CustomElement a
+            , Buttons.CustomAttrs [ class "is-pulled-right" ]
+            ]
+        }
 
 
 assignDuesModal : SubmissionState -> Html Msg
 assignDuesModal state =
     let
         chargeButton =
-            a
-                [ class <|
-                    "button is-pulled-left is-primary"
-                        ++ isLoadingClass (state == Sending)
-                , onClick ChargeDues
-                ]
-                [ text "Dolla dolla bill, y'all" ]
+            Buttons.button
+                { content = "Dolla dolla bill, y'all"
+                , onClick = Just ChargeDues
+                , attrs =
+                    [ Buttons.CustomElement a
+                    , Buttons.CustomAttrs [ class "is-pulled-left" ]
+                    , Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsLoading (state == Sending)
+                    ]
+                }
     in
     Basics.modal (ChangeTab Nothing) <|
         div [ style "padding" "20px" ]
@@ -465,13 +454,16 @@ assignLateDuesModal : SubmissionState -> Html Msg
 assignLateDuesModal state =
     let
         chargeButton =
-            a
-                [ class <|
-                    "button is-pulled-left is-primary"
-                        ++ isLoadingClass (state == Sending)
-                , onClick ChargeLateDues
-                ]
-                [ text "Dolla dolla bill, y'all" ]
+            Buttons.button
+                { content = "Dolla dolla bill, y'all"
+                , onClick = Just ChargeLateDues
+                , attrs =
+                    [ Buttons.CustomElement a
+                    , Buttons.CustomAttrs [ class "is-pulled-left" ]
+                    , Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsLoading (state == Sending)
+                    ]
+                }
     in
     Basics.modal (ChangeTab Nothing) <|
         div [ style "padding" "20px" ]
@@ -503,46 +495,51 @@ batchTransactionsSidebar common batch state =
         , render =
             \_ ->
                 div []
-                    [ Basics.backTextButton "cancel" (ChangeTab Nothing)
-                    , Basics.title "Batch Transaction"
-                    , selectInput
-                        { title = "What's its persuasion?"
-                        , helpText = Nothing
-                        , values = common.info.transactionTypes
-                        , render = \type_ -> ( type_, type_ )
-                        , loading = False
-                        , selected = (==) batch.type_
-                        , onSelect = \type_ -> UpdateTransactionBatch { batch | type_ = type_ }
+                    [ Buttons.back
+                        { content = "cancel"
+                        , onClick = ChangeTab Nothing
                         }
-                    , textInput
-                        { title = "What's it for?"
-                        , helpText = Nothing
-                        , value = batch.description
-                        , placeholder = "Scotland Trip 2029"
-                        , required = True
+                    , Basics.centeredTitle "Batch Transaction"
+                    , selectInput Forms.string
+                        { values = common.info.transactionTypes
+                        , selected = batch.type_
+                        , onInput = \type_ -> UpdateTransactionBatch { batch | type_ = type_ }
+                        , attrs = [ Forms.Title "What's its persuasion?" ]
+                        }
+                    , textInput Forms.string
+                        { value = batch.description
                         , onInput = \description -> UpdateTransactionBatch { batch | description = description }
+                        , attrs =
+                            [ Forms.Title "What's it for?"
+                            , Forms.Placeholder "Scotland Trip 2029"
+                            , Forms.RequiredField True
+                            ]
                         }
-                    , numberInputWithPrefix
-                        { title = "How many doll hairs?"
-                        , prefix = "$"
-                        , helpText = Nothing
-                        , value = batch.amount |> Maybe.map String.fromInt |> Maybe.withDefault ""
-                        , placeholder = "420"
-                        , required = True
-                        , onInput = \amount -> UpdateTransactionBatch { batch | amount = amount |> String.toInt }
+                    , textInput Forms.int
+                        { value = batch.amount
+                        , onInput = \amount -> UpdateTransactionBatch { batch | amount = amount }
+                        , attrs =
+                            [ Forms.RequiredField True
+                            , Forms.Placeholder "420"
+                            , Forms.Prefix "$"
+                            , Forms.Title "How many doll hairs?"
+                            ]
                         }
-                    , fieldWrapper { title = "Whomdst?", helpText = Nothing } <|
+                    , inputWrapper [ Forms.Title "Whomdst" ]
                         [ Basics.box
                             [ ul [ style "column-count" "3", style "column-gap" "20px" ]
                                 (common.members |> List.map (memberListItem batch))
                             ]
                         ]
                     , br [] []
-                    , button
-                        [ class <| "button is-primary" ++ isLoadingClass (state == Sending)
-                        , onClick SendTransactionBatch
-                        ]
-                        [ text "My mind on my money and my money on my mind" ]
+                    , Buttons.button
+                        { content = "My mind on my money and my money on my mind"
+                        , onClick = Just SendTransactionBatch
+                        , attrs =
+                            [ Buttons.Color Buttons.IsPrimary
+                            , Buttons.IsLoading (state == Sending)
+                            ]
+                        }
                     , case state of
                         ErrorSending error ->
                             Basics.errorBox error
@@ -564,7 +561,7 @@ memberListItem batch member =
                 { batch
                     | members =
                         batch.members
-                            |> List.filter ((/=) member.email)
+                            |> List.remove member.email
                             |> List.append
                                 (if checked then
                                     [ member.email ]

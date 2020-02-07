@@ -1,12 +1,12 @@
 module Page.Events.EditEvent exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (checkboxInput, dateInput, fieldWrapper, selectInput, textInput, textareaInput, timeInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (checkboxInput, radioInput, selectInput, textInput, textareaInput)
 import Datetime exposing (hyphenDateFormatter, parseFormDateAndTimeString, twentyFourHourTimeFormatter)
 import Error exposing (GreaseResult)
-import Html exposing (Html, br, button, div, form, input, label, text, textarea)
-import Html.Attributes exposing (checked, class, placeholder, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html exposing (Html, br, div, form, text)
+import Html.Events exposing (onSubmit)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra as List
@@ -251,7 +251,7 @@ serializeEventForm common event gig =
 view : Model -> Html Msg
 view model =
     div []
-        [ Basics.title "Edit Event"
+        [ Basics.centeredTitle "Edit Event"
         , form [ onSubmit <| ForSelf UpdateEvent ]
             [ leftColumnInEventForm model.event model.gig
             , middleColumnInEventForm model
@@ -264,69 +264,70 @@ view model =
 leftColumnInEventForm : EditEventForm -> EditGigForm -> Html Msg
 leftColumnInEventForm event gig =
     Basics.column
-        [ textInput
-            { title = "Event Name"
-            , value = event.name
-            , placeholder = "Flashmobbing the HOMO SEX IS SIN people"
-            , helpText = Just "Make it descriptive, make it short."
-            , required = True
+        [ textInput Forms.string
+            { value = event.name
             , onInput = \name -> ForSelf <| UpdateEventForm { event | name = name }
+            , attrs =
+                [ Forms.Title "Event Name"
+                , Forms.Placeholder "Flashmobbing the HOMO SEX IS SIN people"
+                , Forms.HelpText "Make it descriptive, make it short."
+                , Forms.RequiredField True
+                ]
             }
-        , textInput
-            { title = "Event Location"
-            , value = event.location
-            , placeholder = "Your mom's house 😂"
-            , helpText = Just "ha gottem"
-            , required = False
+        , textInput Forms.string
+            { value = event.location
             , onInput = \location -> ForSelf <| UpdateEventForm { event | location = location }
+            , attrs =
+                [ Forms.Title "Event Location"
+                , Forms.Placeholder "Your mom's house 😂"
+                , Forms.HelpText "ha gottem"
+                ]
             }
-        , dateInput
-            { title = "Date of Event"
-            , value = event.callDate
-            , placeholder = ""
-            , helpText = Nothing
-            , required = True
+        , textInput Forms.date
+            { value = event.callDate
             , onInput = \callDate -> ForSelf <| UpdateEventForm { event | callDate = callDate }
+            , attrs =
+                [ Forms.Title "Date of Event"
+                , Forms.RequiredField True
+                ]
             }
-        , timeInput
-            { title = "Call Time"
-            , value = event.callTime
-            , placeholder = ""
-            , helpText = Just "4:20 lamo"
-            , required = True
+        , textInput Forms.time
+            { value = event.callTime
             , onInput = \callTime -> ForSelf <| UpdateEventForm { event | callTime = callTime }
+            , attrs =
+                [ Forms.Title "Call Time"
+                , Forms.HelpText "4:20 lamo"
+                , Forms.RequiredField True
+                ]
             }
-        , timeInput
-            { title = "Event Time"
-            , value = gig.performanceTime
-            , placeholder = ""
-            , helpText = Just "4:21 lamo"
-            , required = False
+        , textInput Forms.time
+            { value = gig.performanceTime
             , onInput = \performanceTime -> ForSelf <| UpdateGigForm { gig | performanceTime = performanceTime }
+            , attrs =
+                [ Forms.Title "Event Time"
+                , Forms.HelpText "4:21 lamo"
+                ]
             }
-        , timeInput
-            { title = "Release Time"
-            , value = event.releaseTime
-            , placeholder = ""
-            , helpText = Just "4:22 lamo"
-            , required = False
+        , textInput Forms.time
+            { value = event.releaseTime
             , onInput = \releaseTime -> ForSelf <| UpdateEventForm { event | releaseTime = releaseTime }
+            , attrs =
+                [ Forms.Title "Release Time"
+                , Forms.HelpText "4:22 lamo"
+                ]
             }
-        , dateInput
-            { title = "Release Date"
-            , value = event.releaseDate
-            , placeholder = ""
-            , helpText = Nothing
-            , required = False
+        , textInput Forms.date
+            { value = event.releaseDate
             , onInput = \releaseDate -> ForSelf <| UpdateEventForm { event | releaseDate = releaseDate }
+            , attrs = [ Forms.Title "Release Date" ]
             }
-        , textInput
-            { title = "How many points is this worth?"
-            , value = event.points |> Maybe.map String.fromInt |> Maybe.withDefault ""
-            , placeholder = "69"
-            , helpText = Nothing
-            , required = False
-            , onInput = \points -> ForSelf <| UpdateEventForm { event | points = points |> String.toInt }
+        , textInput Forms.int
+            { value = event.points
+            , onInput = \points -> ForSelf <| UpdateEventForm { event | points = points }
+            , attrs =
+                [ Forms.Title "How many points is this worth?"
+                , Forms.Placeholder "69"
+                ]
             }
         ]
 
@@ -340,72 +341,46 @@ middleColumnInEventForm model =
         gig =
             model.gig
 
-        eventTypeOption selectedType eventType =
-            label [ class "radio" ]
-                [ input
-                    [ type_ "radio"
-                    , checked <| eventType.name == selectedType
-                    , onClick <| ForSelf <| UpdateEventForm { event | type_ = eventType.name }
-                    ]
-                    []
-                , text <| " " ++ eventType.name
-                ]
+        uniformInputType =
+            { toString = Maybe.map .name >> Maybe.withDefault "(no uniform)"
+            , fromString = \name -> model.common.info.uniforms |> List.find (\u -> u.name == name)
+            , textType = Forms.Text
+            }
     in
     Basics.column
-        [ fieldWrapper { title = "Event Type", helpText = Nothing } <|
-            (model.common.info.eventTypes
-                |> List.map (eventTypeOption event.type_)
-                |> List.intersperse (br [] [])
-            )
-        , selectInput
-            { title = "Semester"
-            , helpText = Nothing
-            , values =
+        [ radioInput identity
+            { values = model.common.info.eventTypes |> List.map .name
+            , selected = event.type_
+            , onInput = \type_ -> ForSelf <| UpdateEventForm { event | type_ = type_ }
+            , attrs = [ Forms.Title "Event Type" ]
+            }
+        , selectInput Forms.string
+            { values =
                 model.semesters
                     |> Utils.remoteToMaybe
                     |> Maybe.map (List.map .name)
                     |> Maybe.withDefault [ model.common.currentSemester.name ]
-            , render = \name -> ( name, name )
-            , loading = model.semesters == Loading
-            , selected = (==) event.semester
-            , onSelect = \semester -> ForSelf <| UpdateEventForm { event | semester = semester }
-            }
-        , selectInput
-            { title = "Uniform"
-            , helpText = Nothing
-            , values = Nothing :: (model.common.info.uniforms |> List.map Just)
-            , render =
-                Maybe.map (\u -> ( u.name, u.name ))
-                    >> Maybe.withDefault ( "", "(no uniform)" )
-            , loading = False
-            , selected =
-                \uniform ->
-                    case ( uniform, model.gig.uniform ) of
-                        ( Just u, Just selected ) ->
-                            u.id == selected.id
-
-                        ( Nothing, Nothing ) ->
-                            True
-
-                        _ ->
-                            False
-            , onSelect =
-                \name ->
-                    ForSelf <|
-                        UpdateGigForm
-                            { gig
-                                | uniform = model.common.info.uniforms |> List.find (\u -> u.name == name)
-                            }
-            }
-        , fieldWrapper { title = "Event Summary", helpText = Nothing } <|
-            [ textarea
-                [ class "textarea"
-                , placeholder "We're gonna get in there, we're gonna use our mouths, and we're gonna get out."
-                , value event.comments
-                , onInput (\comments -> ForSelf <| UpdateEventForm { event | comments = comments })
+            , selected = event.semester
+            , onInput = \semester -> ForSelf <| UpdateEventForm { event | semester = semester }
+            , attrs =
+                [ Forms.Title "Semester"
+                , Forms.IsLoading (model.semesters == Loading)
                 ]
-                []
-            ]
+            }
+        , selectInput uniformInputType
+            { values = Nothing :: (model.common.info.uniforms |> List.map Just)
+            , selected = gig.uniform
+            , onInput = \uniform -> ForSelf <| UpdateGigForm { gig | uniform = uniform }
+            , attrs = [ Forms.Title "Uniform" ]
+            }
+        , textareaInput
+            { value = event.comments
+            , onInput = \comments -> ForSelf <| UpdateEventForm { event | comments = comments }
+            , attrs =
+                [ Forms.Title "Event Summary"
+                , Forms.Placeholder "We're gonna get in there, we're gonna use our mouths, and we're gonna get out."
+                ]
+            }
         ]
 
 
@@ -425,21 +400,23 @@ rightColumnInEventForm state event gig =
 
             else
                 [ isPublicInput
-                , textInput
-                    { title = "Public Summary"
-                    , value = gig.summary
-                    , placeholder = "Friends? Countrymen? Bueller?"
-                    , helpText = Just "Careful, real people will see this"
-                    , required = False
+                , textInput Forms.string
+                    { value = gig.summary
                     , onInput = \summary -> ForSelf <| UpdateGigForm { gig | summary = summary }
+                    , attrs =
+                        [ Forms.Title "Public Summary"
+                        , Forms.HelpText "Careful, real people will see this"
+                        , Forms.Placeholder "Friends? Countrymen? Bueller?"
+                        ]
                     }
                 , textareaInput
-                    { title = "Public Description"
-                    , value = gig.description
-                    , placeholder = "We the people, in order to kick a more perfect ass, I don;t know where this is going"
-                    , helpText = Just "Careful, real people will see this"
-                    , required = False
+                    { value = gig.description
                     , onInput = \description -> ForSelf <| UpdateGigForm { gig | description = description }
+                    , attrs =
+                        [ Forms.Title "Public Description"
+                        , Forms.HelpText "Careful, real people will see this"
+                        , Forms.Placeholder "We the people, in order to kick a more perfect ass, I don't know where this is going"
+                        ]
                     }
                 ]
     in
@@ -456,11 +433,14 @@ rightColumnInEventForm state event gig =
                     , onChange = \gigCount -> ForSelf <| UpdateEventForm { event | gigCount = gigCount }
                     }
                , br [] []
-               , button
-                    [ type_ "submit"
-                    , class <| "button is-primary" ++ Utils.isLoadingClass (state == Sending)
-                    ]
-                    [ text "Update" ]
+               , br [] []
+               , Buttons.submit
+                    { content = "Update"
+                    , attrs =
+                        [ Buttons.Color Buttons.IsPrimary
+                        , Buttons.IsLoading (state == Sending)
+                        ]
+                    }
                , case state of
                     ErrorSending error ->
                         Basics.errorBox error

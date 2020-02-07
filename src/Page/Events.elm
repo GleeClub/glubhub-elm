@@ -1,6 +1,7 @@
 module Page.Events exposing (FullEventTab(..), Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Components.SelectableList exposing (selectableList)
 import Datetime exposing (simpleDateFormatter)
 import Error exposing (GreaseResult)
@@ -439,8 +440,11 @@ tabContent : Common -> ( Event, FullEventTab ) -> List (Html Msg)
 tabContent common ( event, eventTab ) =
     let
         header =
-            [ Basics.backTextButton "all events" UnselectEvent
-            , Basics.title event.name
+            [ Buttons.back
+                { content = "all events"
+                , onClick = UnselectEvent
+                }
+            , Basics.centeredTitle event.name
             , eventTabs common event eventTab
             ]
     in
@@ -471,7 +475,10 @@ tabContent common ( event, eventTab ) =
             ]
 
         FullEventEdit tab ->
-            [ Basics.backTextButton "cancel editing" (ChangeTab EventDetails)
+            [ Buttons.back
+                { content = "cancel editing"
+                , onClick = ChangeTab EventDetails
+                }
             , EditEvent.view tab |> Html.map editEventTranslator
             ]
 

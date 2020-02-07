@@ -1,16 +1,31 @@
 module Page.Admin.Uniforms exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
+import Components.DeleteModal exposing (deleteModal)
+import Components.Forms as Forms exposing (textInput, textareaInput)
 import Error exposing (GreaseResult)
-import Html exposing (Html, b, button, div, footer, header, i, input, p, section, span, table, td, text, textarea, th, tr)
-import Html.Attributes exposing (attribute, class, placeholder, style, type_, value)
-import Html.Events exposing (onBlur, onClick, onInput)
+import Html exposing (Html, b, button, div, i, p, span, table, td, text, th, tr)
+import Html.Attributes exposing (style)
 import Json.Decode as Decode exposing (field, string)
 import Json.Encode as Encode
 import List.Extra exposing (getAt, setAt, updateAt)
 import Models.Info exposing (Uniform, uniformDecoder)
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, getRequest, mapLoaded, postRequest, postRequestFull, remoteToMaybe, resultToRemote, resultToSubmissionState)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , deleteRequest
+        , getRequest
+        , mapLoaded
+        , postRequest
+        , postRequestFull
+        , remoteToMaybe
+        , resultToRemote
+        , resultToSubmissionState
+        )
 
 
 
@@ -55,7 +70,6 @@ type Msg
     = OnLoadUniforms (GreaseResult (List Uniform))
     | OnChangeUniform (GreaseResult ())
     | UpdateUniform Uniform Int
-    | SendUniformUpdate Int
     | TryToDeleteUniform Int
     | CancelDeleteUniform
     | ConfirmDeleteUniform
@@ -75,15 +89,9 @@ update msg model =
             ( { model | state = resultToSubmissionState result }, Cmd.none )
 
         UpdateUniform uniform uniformIndex ->
-            ( { model | uniforms = model.uniforms |> mapLoaded (setAt uniformIndex uniform) }, Cmd.none )
-
-        SendUniformUpdate index ->
-            case model |> findUniform index of
-                Just uniform ->
-                    ( { model | state = Sending }, updateUniform model.common uniform )
-
-                Nothing ->
-                    ( model, Cmd.none )
+            ( { model | uniforms = model.uniforms |> mapLoaded (setAt uniformIndex uniform), state = Sending }
+            , updateUniform model.common uniform
+            )
 
         TryToDeleteUniform index ->
             ( { model | tryingToDelete = Just index }, Cmd.none )
@@ -202,8 +210,8 @@ view model =
         [ Basics.title "Uniforms"
         , Basics.box
             [ model.uniforms |> Basics.remoteContent (uniformTable model.newUniform)
-            , deleteUniformModal model
             , Basics.submissionStateBox model.state
+            , deleteUniformModal model
             ]
         ]
 
@@ -227,133 +235,92 @@ uniformTable newUniform allUniforms =
 
 headerRow : Html Msg
 headerRow =
+    let
+        columnNames =
+            [ "Name", "Description" ]
+    in
     tr []
-        [ th [] [ b [] [ text "Name" ] ]
-        , th [] [ b [] [ text "Description" ] ]
-        ]
+        (columnNames
+            |> List.map
+                (\n ->
+                    th []
+                        [ b [] [ text n ] ]
+                )
+        )
 
 
 uniformRow : Int -> Uniform -> Html Msg
 uniformRow index uniform =
+    let
+        columns =
+            [ textInput Forms.string
+                { value = uniform.name
+                , onInput = \name -> UpdateUniform { uniform | name = name } index
+                , attrs = [ Forms.Placeholder "Name" ]
+                }
+            , textareaInput
+                { value = uniform.description |> Maybe.withDefault ""
+                , onInput = \description -> UpdateUniform { uniform | description = Just description } index
+                , attrs = [ Forms.Placeholder "Description" ]
+                }
+            , span [ style "display" "inline-block", style "vertical-align" "middle" ]
+                [ Buttons.delete <| TryToDeleteUniform index ]
+            ]
+    in
     tr []
-        [ td [ style "padding-right" "10px" ]
-            [ input
-                [ type_ "text"
-                , class "input"
-                , value uniform.name
-                , placeholder "Name"
-                , onInput (\name -> UpdateUniform { uniform | name = name } index)
-                , onBlur (SendUniformUpdate index)
-                ]
-                []
-            ]
-        , td []
-            [ textarea
-                [ class "textarea"
-                , value (uniform.description |> Maybe.withDefault "")
-                , placeholder "Description"
-                , onInput (\description -> UpdateUniform { uniform | description = Just description } index)
-                , onBlur (SendUniformUpdate index)
-                ]
-                []
-            ]
-        , td []
-            [ span [ style "display" "inline-block", style "vertical-align" "middle" ]
-                [ button
-                    [ class "delete"
-                    , attribute "aria-label" "delete"
-                    , onClick (TryToDeleteUniform index)
-                    ]
-                    []
-                ]
-            ]
-        ]
+        (columns |> List.map (\column -> td [] [ column ]))
 
 
 newUniformRow : Uniform -> Html Msg
 newUniformRow uniform =
+    let
+        columns =
+            [ textInput Forms.string
+                { value = uniform.name
+                , onInput = InputNewName
+                , attrs = [ Forms.Placeholder "Name" ]
+                }
+            , textareaInput
+                { value = uniform.description |> Maybe.withDefault ""
+                , onInput = InputNewDescription
+                , attrs = [ Forms.Placeholder "Description" ]
+                }
+            , Buttons.button
+                { content = "Suit up."
+                , onClick = Just CreateNewUniform
+                , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                }
+            ]
+    in
     tr []
-        [ td []
-            [ input
-                [ type_ "text"
-                , class "input"
-                , value uniform.name
-                , placeholder "Name"
-                , onInput InputNewName
-                ]
-                []
-            ]
-        , td []
-            [ textarea
-                [ class "textarea"
-                , value (uniform.description |> Maybe.withDefault "")
-                , placeholder "Description"
-                , onInput InputNewDescription
-                ]
-                []
-            ]
-        , td []
-            [ button [ class "button is-primary", onClick CreateNewUniform ]
-                [ text "Suit up." ]
-            ]
-        ]
+        (columns |> List.map (\column -> td [] [ column ]))
 
 
 deleteUniformModal : Model -> Html Msg
 deleteUniformModal model =
-    case
-        model.tryingToDelete
-            |> Maybe.andThen
-                (\index ->
-                    model.uniforms
-                        |> remoteToMaybe
-                        |> Maybe.andThen (getAt index)
-                )
-    of
+    let
+        uniformToDelete =
+            model.tryingToDelete
+                |> Maybe.andThen
+                    (\index ->
+                        model.uniforms
+                            |> remoteToMaybe
+                            |> Maybe.andThen (getAt index)
+                    )
+    in
+    case uniformToDelete of
         Nothing ->
-            div [] []
+            text ""
 
         Just uniform ->
-            div [ class "modal is-active" ]
-                [ div [ class "modal-background", onClick CancelDeleteUniform ] []
-                , div [ class "modal-card" ]
-                    [ modalHeader uniform, modalBody uniform, modalButtons ]
-                ]
-
-
-modalHeader : Uniform -> Html Msg
-modalHeader uniform =
-    header [ class "modal-card-head" ]
-        [ p [ class "modal-card-title" ]
-            [ text <| "Delete uniform " ++ uniform.name ++ "?" ]
-        , button
-            [ class "delete"
-            , attribute "aria-label" "close"
-            , onClick CancelDeleteUniform
-            ]
-            []
-        ]
-
-
-modalBody : Uniform -> Html Msg
-modalBody uniform =
-    section [ class "modal-card-body" ]
-        [ p [] [ text <| "Are you sure you want to delete the " ++ uniform.name ++ " uniform?" ]
-        , p [] [ i [] [ text "Note: all events that have this uniform will no longer have a uniform." ] ]
-        ]
-
-
-modalButtons : Html Msg
-modalButtons =
-    footer [ class "modal-card-foot" ]
-        [ button
-            [ class "button is-danger"
-            , onClick ConfirmDeleteUniform
-            ]
-            [ text "Delete" ]
-        , button
-            [ class "button"
-            , onClick CancelDeleteUniform
-            ]
-            [ text "Cancel" ]
-        ]
+            deleteModal
+                { title = "Delete uniform " ++ uniform.name ++ "?"
+                , cancel = CancelDeleteUniform
+                , confirm = ConfirmDeleteUniform
+                , state = model.state
+                , content =
+                    div []
+                        [ p [] [ text <| "Are you sure you want to delete the " ++ uniform.name ++ " uniform?" ]
+                        , p [] [ i [] [ text "Note: all events that have this uniform will no longer have a uniform." ] ]
+                        ]
+                }

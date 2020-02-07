@@ -1,16 +1,17 @@
 module Page.ForgotPassword exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Components.Forms exposing (emailInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (textInput)
 import Error exposing (GreaseError(..), GreaseResult)
-import Html exposing (Html, br, button, div, form, h4, p, text)
-import Html.Attributes exposing (class, style, type_)
+import Html exposing (Html, br, div, form, p, text)
+import Html.Attributes exposing (class, style)
 import Html.Events exposing (onSubmit)
 import Http.Detailed exposing (Error(..))
 import Json.Encode as Encode
 import Route
 import Task
-import Utils exposing (RemoteData(..), SubmissionState(..), alert, isLoadingClass, postRequest)
+import Utils exposing (RemoteData(..), SubmissionState(..), alert, postRequest)
 
 
 
@@ -98,27 +99,29 @@ view model =
             [ Basics.narrowColumn
                 [ form [ onSubmit Submit, style "padding" "10px" ]
                     [ Basics.box
-                        [ h4 [ class "title" ] [ text "Forgot your password?" ]
+                        [ Basics.title4 "Forgot your password?"
                         , p []
                             [ text "That sucks. But don't \"oh geez, oh frick\", just slap "
                             , text "some emails down and we will send you an email with a reset link."
                             ]
                         , br [] []
-                        , emailInput
-                            { title = "E-mail"
-                            , helpText = Nothing
-                            , value = model.email
-                            , placeholder = "gburdell3@gatech.edu"
-                            , required = True
+                        , textInput Forms.email
+                            { value = model.email
                             , onInput = UpdateEmail
+                            , attrs =
+                                [ Forms.Title "E-mail"
+                                , Forms.Placeholder "gburdell3@gatech.edu"
+                                , Forms.RequiredField True
+                                ]
                             }
-                        , emailInput
-                            { title = "Confirm E-mail"
-                            , helpText = Nothing
-                            , value = model.confirmEmail
-                            , placeholder = "bgurdell3@gatech.edu"
-                            , required = True
+                        , textInput Forms.email
+                            { value = model.confirmEmail
                             , onInput = UpdateConfirmEmail
+                            , attrs =
+                                [ Forms.Title "Confirm E-mail"
+                                , Forms.Placeholder "bgurdell3@gatech.edu"
+                                , Forms.RequiredField True
+                                ]
                             }
                         , actionButtons model
                         , case model.state of
@@ -136,11 +139,21 @@ view model =
 
 actionButtons : Model -> Html Msg
 actionButtons model =
-    div [ class "buttons is-right" ]
-        [ Basics.linkButton "uh, nvm" Route.Login
-        , button
-            [ type_ "submit"
-            , class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
+    Buttons.group
+        { alignment = Buttons.AlignRight
+        , connected = False
+        , buttons =
+            [ Buttons.link
+                { content = "uh, nvm"
+                , route = Route.Login
+                , attrs = []
+                }
+            , Buttons.submit
+                { content = "halp"
+                , attrs =
+                    [ Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsLoading (model.state == Sending)
+                    ]
+                }
             ]
-            [ text "halp" ]
-        ]
+        }

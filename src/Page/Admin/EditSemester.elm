@@ -2,14 +2,16 @@ module Page.Admin.EditSemester exposing (Model, Msg(..), init, update, view)
 
 import Browser.Navigation as Nav
 import Components.Basics as Basics
-import Components.Forms exposing (dateInput, numberInput, textInput)
+import Components.Buttons as Buttons
+import Components.Forms as Forms exposing (selectInput, textInput)
 import Datetime exposing (hyphenDateFormatter, parseFormDateString)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, br, button, div, form, h2, option, p, select, text)
-import Html.Attributes exposing (class, selected, style, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html exposing (Html, a, br, button, div, form, h2, p, text)
+import Html.Attributes exposing (class, style)
+import Html.Events exposing (onClick, onSubmit)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
+import List.Extra as List
 import Maybe.Extra exposing (isNothing)
 import Models.Info exposing (Semester, semesterDecoder)
 import Task
@@ -39,7 +41,7 @@ type alias SemesterForm =
     { name : String
     , startDate : String
     , endDate : String
-    , gigRequirement : String
+    , gigRequirement : Maybe Int
     }
 
 
@@ -59,7 +61,7 @@ emptySemesterForm =
     { name = ""
     , startDate = ""
     , endDate = ""
-    , gigRequirement = ""
+    , gigRequirement = Nothing
     }
 
 
@@ -68,7 +70,7 @@ formFromSemester common semester =
     { name = semester.name
     , startDate = semester.startDate |> hyphenDateFormatter common.timeZone
     , endDate = semester.endDate |> hyphenDateFormatter common.timeZone
-    , gigRequirement = semester.gigRequirement |> String.fromInt
+    , gigRequirement = Just semester.gigRequirement
     }
 
 
@@ -198,7 +200,6 @@ serializeSemester common semesterForm =
 
         gigRequirement =
             semesterForm.gigRequirement
-                |> String.toInt
                 |> Maybe.withDefault 5
     in
     Encode.object
@@ -225,30 +226,33 @@ editSemesterOptions : Model -> List Semester -> Html Msg
 editSemesterOptions model semesters =
     let
         semesterOption content semesterTab =
-            p [ class "control" ]
-                [ a
-                    [ class "button is-primary"
-                    , onClick (ChangeTab <| Just semesterTab)
-                    ]
-                    [ text content ]
+            Forms.control
+                [ Buttons.button
+                    { content = content
+                    , onClick = Just <| (ChangeTab <| Just semesterTab)
+                    , attrs = [ Buttons.Color Buttons.IsPrimary ]
+                    }
                 ]
 
         currentSemester =
             model.common.currentSemester
     in
-    Basics.column
+    div []
         [ editSemesterPrelude
-        , div
-            [ class "field is-grouped is-grouped-centered" ]
-            [ semesterOption "Switch semesters" (ChangingSemester currentSemester.name)
-            , semesterOption "Edit this semester"
-                (EditingSemester currentSemester.name <|
-                    formFromSemester model.common currentSemester
-                )
-            , semesterOption "Birth a semester" (CreatingSemester <| emptySemesterForm)
-            , br [] []
-            , currentSemesterTab model semesters
-            ]
+        , Buttons.group
+            { alignment = Buttons.AlignCenter
+            , connected = True
+            , buttons =
+                [ semesterOption "Switch semesters" (ChangingSemester currentSemester.name)
+                , semesterOption "Edit this semester"
+                    (EditingSemester currentSemester.name <|
+                        formFromSemester model.common currentSemester
+                    )
+                , semesterOption "Birth a semester" (CreatingSemester <| emptySemesterForm)
+                ]
+            }
+        , br [] []
+        , currentSemesterTab model semesters
         ]
 
 
@@ -321,38 +325,36 @@ changeSemesterModalContent state semesters selectedName =
         , br [] []
         , div
             [ class "field is-grouped is-grouped-centered" ]
-            [ div [ class "select" ]
-                [ select
-                    [ onInput SelectSemesterToChangeTo ]
-                    (semesters
-                        |> List.map
-                            (\s ->
-                                option [ value s.name, selected <| s.name == selectedName ] [ text s.name ]
-                            )
-                    )
-                ]
+            [ selectInput Forms.string
+                { values =
+                    semesters
+                        |> List.map .name
+                        |> List.updateIf ((==) selectedName) ((++) " (current)")
+                , selected = selectedName
+                , onInput = SelectSemesterToChangeTo
+                , attrs = []
+                }
             ]
         , br [] []
-        , a
-            [ class <|
-                "button is-pulled-left is-primary"
-                    ++ (if state == Sending then
-                            " is-loading"
-
-                        else
-                            ""
-                       )
-            , onClick <| ChangeSemesterTo selectedName
-            ]
-            [ text "The ol' Glub Hub switcharoo" ]
-        , a
-            [ class "button is-pulled-right"
-            , onClick <| ChangeTab Nothing
-            ]
-            [ text "ABORT! ABORT!" ]
-        , br
-            []
-            []
+        , Buttons.button
+            { content = "The ol' Glub Hub switcharoo"
+            , onClick = Just <| ChangeSemesterTo selectedName
+            , attrs =
+                [ Buttons.CustomElement a
+                , Buttons.CustomAttrs [ class "is-pulled-left" ]
+                , Buttons.Color Buttons.IsPrimary
+                , Buttons.IsLoading (state == Sending)
+                ]
+            }
+        , Buttons.button
+            { content = "ABORT! ABORT!"
+            , onClick = Just <| ChangeTab Nothing
+            , attrs =
+                [ Buttons.CustomElement a
+                , Buttons.CustomAttrs [ class "is-pulled-right" ]
+                ]
+            }
+        , br [] []
         ]
             ++ (case state of
                     ErrorSending error ->
@@ -374,53 +376,50 @@ createSemesterSidebar state semester =
             , text "you want to later, but before it turns 18."
             ]
         , br [] []
-        , form [ onSubmit <| CreateSemester semester ]
+        , Basics.form (CreateSemester semester)
             [ Basics.narrowColumn
-                [ textInput
-                    { title = "Semester Name"
-                    , helpText = Nothing
-                    , value = semester.name
-                    , placeholder = "Fall 20XX"
-                    , required = True
+                [ textInput Forms.string
+                    { value = semester.name
                     , onInput = \name -> UpdateCreateSemesterForm { semester | name = name }
+                    , attrs =
+                        [ Forms.Title "Semester Name"
+                        , Forms.Placeholder "Fall 20XX"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , dateInput
-                    { title = "The first day of the rest of your life"
-                    , helpText = Nothing
-                    , value = semester.startDate
-                    , placeholder = ""
-                    , required = True
+                , textInput Forms.date
+                    { value = semester.startDate
                     , onInput = \startDate -> UpdateCreateSemesterForm { semester | startDate = startDate }
+                    , attrs =
+                        [ Forms.Title "The first day of the rest of your life"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , dateInput
-                    { title = "The last day of the rest of your life"
-                    , helpText = Nothing
-                    , value = semester.endDate
-                    , placeholder = ""
-                    , required = True
+                , textInput Forms.date
+                    { value = semester.endDate
                     , onInput = \endDate -> UpdateCreateSemesterForm { semester | endDate = endDate }
+                    , attrs =
+                        [ Forms.Title "The last day of the rest of your life"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , numberInput
-                    { title = "Number of required volunteer gigs"
-                    , helpText = Nothing
-                    , value = semester.gigRequirement
-                    , placeholder = "5"
-                    , required = True
+                , textInput Forms.int
+                    { value = semester.gigRequirement
                     , onInput = \gigRequirement -> UpdateCreateSemesterForm { semester | gigRequirement = gigRequirement }
+                    , attrs =
+                        [ Forms.Title "Number of required volunteer gigs"
+                        , Forms.RequiredField True
+                        , Forms.Placeholder "5"
+                        ]
                     }
                 , br [] []
-                , button
-                    [ type_ "submit"
-                    , class <|
-                        "button is-primary"
-                            ++ (if state == Sending then
-                                    " is-loading"
-
-                                else
-                                    ""
-                               )
-                    ]
-                    [ text "Break your water" ]
+                , Buttons.submit
+                    { content = "Break your water"
+                    , attrs =
+                        [ Buttons.Color Buttons.IsPrimary
+                        , Buttons.IsLoading (state == Sending)
+                        ]
+                    }
                 , br [] []
                 , case state of
                     ErrorSending error ->
@@ -445,51 +444,48 @@ editSemesterSidebar state semester =
         , br [] []
         , form [ onSubmit <| CreateSemester semester ]
             [ Basics.narrowColumn
-                [ textInput
-                    { title = "Semester Name"
-                    , helpText = Nothing
-                    , value = semester.name
-                    , placeholder = "Fall 20XX"
-                    , required = True
+                [ textInput Forms.string
+                    { value = semester.name
                     , onInput = \name -> UpdateEditSemesterForm { semester | name = name }
+                    , attrs =
+                        [ Forms.Title "Semester Name"
+                        , Forms.Placeholder "Fall 20XX"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , dateInput
-                    { title = "The first day of the rest of your life"
-                    , helpText = Nothing
-                    , value = semester.startDate
-                    , placeholder = ""
-                    , required = True
+                , textInput Forms.date
+                    { value = semester.startDate
                     , onInput = \startDate -> UpdateEditSemesterForm { semester | startDate = startDate }
+                    , attrs =
+                        [ Forms.Title "The first day of the rest of your life"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , dateInput
-                    { title = "The last day of the rest of your life"
-                    , helpText = Nothing
-                    , value = semester.endDate
-                    , placeholder = ""
-                    , required = True
+                , textInput Forms.date
+                    { value = semester.endDate
                     , onInput = \endDate -> UpdateEditSemesterForm { semester | endDate = endDate }
+                    , attrs =
+                        [ Forms.Title "The last day of the rest of your life"
+                        , Forms.RequiredField True
+                        ]
                     }
-                , numberInput
-                    { title = "Number of required volunteer gigs"
-                    , helpText = Nothing
-                    , value = semester.gigRequirement
-                    , placeholder = "5"
-                    , required = True
+                , textInput Forms.int
+                    { value = semester.gigRequirement
                     , onInput = \gigRequirement -> UpdateEditSemesterForm { semester | gigRequirement = gigRequirement }
+                    , attrs =
+                        [ Forms.Title "Number of required volunteer gigs"
+                        , Forms.Placeholder "5"
+                        , Forms.RequiredField True
+                        ]
                     }
                 , br [] []
-                , button
-                    [ type_ "submit"
-                    , class <|
-                        "button is-primary"
-                            ++ (if state == Sending then
-                                    " is-loading"
-
-                                else
-                                    ""
-                               )
-                    ]
-                    [ text "Do this please" ]
+                , Buttons.submit
+                    { content = "Do this please"
+                    , attrs =
+                        [ Buttons.Color Buttons.IsPrimary
+                        , Buttons.IsLoading (state == Sending)
+                        ]
+                    }
                 , br [] []
                 , case state of
                     ErrorSending error ->

@@ -1,19 +1,29 @@
 module Page.Admin.OfficerPositions exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Forms as Forms exposing (selectInput)
 import Error exposing (GreaseResult)
-import Html exposing (Html, div, option, select, span, table, td, text, tr)
-import Html.Attributes exposing (class, selected, style, value)
-import Html.Events exposing (onInput)
+import Html exposing (Html, div, span, table, td, text, tr)
+import Html.Attributes exposing (style)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Maybe.Extra exposing (isNothing)
 import Models.Event exposing (Member, MemberRole, memberRoleDecoder)
 import Models.Info exposing (Role)
 import Route exposing (AdminTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), fullName, getRequest, mapLoaded, postRequest, resultToRemote, resultToSubmissionState)
+import Utils
+    exposing
+        ( Common
+        , RemoteData(..)
+        , SubmissionState(..)
+        , fullName
+        , getRequest
+        , mapLoaded
+        , postRequest
+        , resultToRemote
+        , resultToSubmissionState
+        )
 
 
 
@@ -149,10 +159,6 @@ removeMemberRole common memberRole =
         |> Task.attempt OnChange
 
 
-
--- TODO: fix loading issue
-
-
 switchMemberRole : Common -> Role -> ( Member, Member ) -> Cmd Msg
 switchMemberRole common role ( oldMember, newMember ) =
     let
@@ -219,39 +225,30 @@ roleRows allMembers memberRoles role =
 
 memberDropdown : Role -> List Member -> Maybe Member -> Html Msg
 memberDropdown role allMembers selectedMember =
+    let
+        memberFormType =
+            { toString = Maybe.map fullName >> Maybe.withDefault "(nobody)"
+            , fromString = \email -> allMembers |> find (\m -> m.email == email)
+            , textType = Forms.Text
+            }
+    in
     tr []
         [ td [ style "padding-right" "10px" ]
             [ span [ style "display" "inline-block", style "vertical-align" "middle" ]
                 [ text <| role.name ]
             ]
         , td []
-            [ div [ class "select" ]
-                [ select
-                    [ onInput
-                        (\email ->
-                            ToggleOfficer
-                                { role = role
-                                , oldMember = selectedMember
-                                , newMember = allMembers |> find (\m -> m.email == email)
-                                }
-                        )
-                    ]
-                    (option [ value "", selected (isNothing selectedMember) ] [ text "(nobody)" ]
-                        :: (allMembers
-                                |> List.map
-                                    (\m ->
-                                        option
-                                            [ value m.email
-                                            , selected
-                                                (selectedMember
-                                                    |> Maybe.map (\s -> s.email == m.email)
-                                                    |> Maybe.withDefault False
-                                                )
-                                            ]
-                                            [ text (m |> fullName) ]
-                                    )
-                           )
-                    )
-                ]
+            [ selectInput memberFormType
+                { values = Nothing :: (allMembers |> List.map Just)
+                , selected = selectedMember
+                , onInput =
+                    \newMember ->
+                        ToggleOfficer
+                            { role = role
+                            , oldMember = selectedMember
+                            , newMember = newMember
+                            }
+                , attrs = []
+                }
             ]
         ]

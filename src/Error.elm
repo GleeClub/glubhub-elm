@@ -85,13 +85,23 @@ parseResponse decoder response =
 
         Http.BadStatus_ metadata body ->
             Err
-                (body
+                ((if String.isEmpty body then
+                    "\"\""
+
+                  else
+                    body
+                 )
                     |> decodeString greaseErrorDecoder
                     |> Result.withDefault (UnknownError ( Just metadata.statusCode, body ))
                 )
 
         Http.GoodStatus_ _ body ->
-            body
+            (if String.isEmpty body then
+                "\"\""
+
+             else
+                body
+            )
                 |> decodeString decoder
                 |> Result.mapError
                     (\decodeError ->

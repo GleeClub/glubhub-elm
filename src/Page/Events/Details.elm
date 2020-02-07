@@ -1,21 +1,22 @@
 module Page.Events.Details exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Components.DeleteModal exposing (deleteModal)
 import Datetime exposing (fullDateTimeFormatter, timeFormatter)
-import Error exposing (GreaseError, GreaseResult)
+import Error exposing (GreaseResult)
 import Html exposing (Html, a, b, br, button, div, i, p, span, text, u)
 import Html.Attributes exposing (attribute, class, href, style, target)
-import Html.Events exposing (onClick)
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Maybe.Extra exposing (isJust, isNothing)
+import Maybe.Extra exposing (isNothing)
+import Models.Admin exposing (AbsenceRequestState(..))
 import Models.Event exposing (Event, Gig, SimpleAttendance)
 import Models.Info exposing (Uniform)
-import Models.Permissions as Permissions
+import Permissions
 import Route exposing (EventTab(..))
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, isLoadingClass, postRequest)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteRequest, eventIsOver, postRequest)
 
 
 
@@ -25,23 +26,16 @@ import Utils exposing (Common, RemoteData(..), SubmissionState(..), deleteReques
 type alias Model =
     { common : Common
     , event : Event
-    , deleteState : DeleteState
+    , deleteState : Maybe SubmissionState
     , state : SubmissionState
     }
-
-
-type DeleteState
-    = NotDeleting
-    | TryingToDelete
-    | CurrentlyDeleting
-    | CouldNotDelete GreaseError
 
 
 init : Common -> Event -> ( Model, Cmd Msg )
 init common event =
     ( { common = common
       , event = event
-      , deleteState = NotDeleting
+      , deleteState = Nothing
       , state = NotSentYet
       }
     , Cmd.none
@@ -127,19 +121,19 @@ update msg model =
             )
 
         TryToDeleteEvent ->
-            ( { model | deleteState = TryingToDelete }, Cmd.none )
+            ( { model | deleteState = Just NotSentYet }, Cmd.none )
 
         CancelDeleteEvent ->
-            ( { model | deleteState = NotDeleting }, Cmd.none )
+            ( { model | deleteState = Nothing }, Cmd.none )
 
         SendDeleteEvent ->
-            ( { model | deleteState = CurrentlyDeleting }, deleteEvent model.common model.event.id )
+            ( { model | deleteState = Just Sending }, deleteEvent model.common model.event.id )
 
         OnDeleteEvent (Ok _) ->
             ( model, Task.perform (\_ -> ForParent <| DeleteEvent model.event.id) (Task.succeed ()) )
 
         OnDeleteEvent (Err error) ->
-            ( { model | deleteState = CouldNotDelete error }, Cmd.none )
+            ( { model | deleteState = Just <| ErrorSending error }, Cmd.none )
 
 
 
@@ -291,17 +285,20 @@ attendanceBlock model =
             attendanceSummary model.event.points attendance
 
         ( attendance, Just issue, False ) ->
-            if [ "Sectional", "Tutti Gig", "Rehearsal" ] |> List.any ((==) model.event.type_) then
+            if [ "Sectional", "Tutti Gig", "Rehearsal" ] |> List.member model.event.type_ then
                 if attendance |> Maybe.map .confirmed |> Maybe.withDefault False then
                     [ text "We know you're coming." ]
 
                 else
                     [ p [] [ text "You're coming, right?" ]
-                    , button
-                        [ class <| "button is-primary" ++ isLoadingClass (model.state == Sending)
-                        , onClick <| ForSelf <| ConfirmAttending
-                        ]
-                        [ text "yep, I'll be there" ]
+                    , Buttons.button
+                        { content = "yep, I'll be there"
+                        , onClick = Just <| ForSelf ConfirmAttending
+                        , attrs =
+                            [ Buttons.Color Buttons.IsPrimary
+                            , Buttons.IsLoading (model.state == Sending)
+                            ]
+                        }
                     ]
 
             else
@@ -318,19 +315,15 @@ rsvpActions : Bool -> SimpleAttendance -> List (Html Msg)
 rsvpActions isSending attendance =
     let
         rsvpButton attending content =
-            button
-                [ class <|
-                    "button is-primary"
-                        ++ (if not attending then
-                                " is-outlined"
-
-                            else
-                                ""
-                           )
-                        ++ Utils.isLoadingClass isSending
-                , onClick <| ForSelf <| Rsvp attending
-                ]
-                [ text content ]
+            Buttons.button
+                { content = content
+                , onClick = Just <| ForSelf <| Rsvp attending
+                , attrs =
+                    [ Buttons.Color Buttons.IsPrimary
+                    , Buttons.IsOutlined
+                    , Buttons.IsLoading isSending
+                    ]
+                }
     in
     case ( attendance.confirmed, attendance.shouldAttend ) of
         ( True, True ) ->
@@ -358,8 +351,6 @@ rsvpActions isSending attendance =
         ( False, False ) ->
             [ p [] [ text "You're not coming, right?" ]
             , rsvpButton True "akshually I can come. you're welcome"
-
-            -- , a [ class "button is-primary" ] [ text "nah, I'm gonna miss it" ]
             ]
 
 
@@ -398,6 +389,7 @@ uniformSection : Uniform -> Html Msg
 uniformSection uniform =
     p []
         [ span [] [ text uniform.name ]
+        , text " "
         , span
             [ style "cursor" "pointer"
             , class "icon tooltip has-tooltip-bottom is-tooltip-multiline has-text-grey-light is-small"
@@ -410,15 +402,30 @@ uniformSection uniform =
 
 absenceRequestButton : Common -> Event -> Html Msg
 absenceRequestButton common event =
-    if not (event |> eventIsOver common) && isJust event.rsvpIssue then
-        a
-            [ class "button is-primary is-outlined"
-            , onClick <| ForParent <| SwitchTab EventDetails
-            ]
-            [ text "Request Absence" ]
+    if (event |> eventIsOver common) && isNothing event.rsvpIssue then
+        text ""
 
     else
-        text ""
+        let
+            ( content, action ) =
+                case event.absenceRequest |> Maybe.map .state of
+                    Nothing ->
+                        ( "Request Absence", Just <| ForParent <| SwitchTab EventRequestAbsence )
+
+                    Just AbsenceRequestPending ->
+                        ( "Request Submitted", Nothing )
+
+                    Just AbsenceRequestApproved ->
+                        ( "Request Approved", Nothing )
+
+                    Just AbsenceRequestDenied ->
+                        ( "Request Denied", Nothing )
+        in
+        Buttons.button
+            { content = content
+            , onClick = action
+            , attrs = [ Buttons.Color Buttons.IsPrimary, Buttons.IsOutlined ]
+            }
 
 
 officerInfoSection : Model -> Html Msg
@@ -433,43 +440,36 @@ officerInfoSection model =
                 |> Maybe.map priceInfo
                 |> Maybe.withDefault (text "")
             , br [] []
-            , button
-                [ class "button"
-                , style "margin-bottom" "5px"
-                , onClick (ForParent <| SwitchTab EventEdit)
-                ]
-                [ text "Edit this bitch" ]
+            , Buttons.button
+                { content = "Edit this bitch"
+                , onClick = Just <| ForParent <| SwitchTab EventEdit
+                , attrs = [ Buttons.CustomAttrs [ style "margin-bottom" "5px" ] ]
+                }
             , br [] []
-            , button
-                [ class "button is-danger is-outlined"
-                , onClick (ForSelf TryToDeleteEvent)
-                ]
-                [ text "Baleet this bitch" ]
-            , if model.deleteState == NotDeleting then
-                text ""
-
-              else
-                deleteModal
-                    { title = "Delete " ++ model.event.name ++ "?"
-                    , cancel = ForSelf CancelDeleteEvent
-                    , confirm = ForSelf SendDeleteEvent
-                    , content =
-                        p []
-                            [ text "Are you sure you want to delete this event? "
-                            , text "Once you delete it, it's gone like Donkey Kong."
-                            ]
-                    , state =
-                        case model.deleteState of
-                            TryingToDelete ->
-                                NotSentYet
-
-                            CouldNotDelete error ->
-                                ErrorSending error
-
-                            _ ->
-                                Sending
-                    }
+            , Buttons.button
+                { content = "Baleet this bitch"
+                , onClick = Just <| ForSelf TryToDeleteEvent
+                , attrs = [ Buttons.Color Buttons.IsDanger, Buttons.IsOutlined ]
+                }
+            , model.deleteState
+                |> Maybe.map (deleteEventModal model.event)
+                |> Maybe.withDefault (text "")
             ]
+
+
+deleteEventModal : Event -> SubmissionState -> Html Msg
+deleteEventModal event state =
+    deleteModal
+        { title = "Delete " ++ event.name ++ "?"
+        , cancel = ForSelf CancelDeleteEvent
+        , confirm = ForSelf SendDeleteEvent
+        , state = state
+        , content =
+            p []
+                [ text "Are you sure you want to delete this event? "
+                , text "Once you delete it, it's gone like Donkey Kong."
+                ]
+        }
 
 
 contactInfo : Gig -> Html Msg

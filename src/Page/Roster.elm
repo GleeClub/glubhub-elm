@@ -1,11 +1,11 @@
 module Page.Roster exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
-import Html exposing (Html, a, div, section, table, tbody, td, text, thead, tr)
+import Html exposing (Html, a, table, tbody, td, text, thead, tr)
 import Html.Attributes exposing (class, href)
 import Models.Event exposing (Member)
 import Route
-import Utils exposing (Common, RemoteData(..), formatPhone, fullName)
+import Utils exposing (Common, RemoteData(..), fullName)
 
 
 
@@ -40,8 +40,8 @@ update _ model =
 
 view : Model -> Html Msg
 view model =
-    section [ class "section" ]
-        [ div [ class "container" ]
+    Basics.section
+        [ Basics.container
             [ Basics.box
                 [ memberTable model.members ]
             ]
@@ -64,9 +64,12 @@ memberTable members =
 memberRow : Member -> Html Msg
 memberRow member =
     tr []
-        [ td [] [ a [ Route.href <| Route.Profile member.email ] [ text (member |> fullName) ] ]
-        , td [] [ text <| Maybe.withDefault "None" member.section ]
-        , td [] [ a [ href <| "mailto:" ++ member.email ] [ text member.email ] ]
-        , td [] [ a [ href <| "tel:" ++ member.phoneNumber ] [ text <| formatPhone member.phoneNumber ] ]
+        [ td []
+            [ a [ Route.href <| Route.Profile { email = member.email, tab = Nothing } ]
+                [ text (member |> fullName) ]
+            ]
+        , td [] [ text <| Maybe.withDefault "Homeless" member.section ]
+        , td [] [ Basics.emailLink member.email ]
+        , td [] [ Basics.phoneLink member.phoneNumber ]
         , td [] [ text member.location ]
         ]

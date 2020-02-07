@@ -1,18 +1,15 @@
 module Components.Basics exposing
-    ( HorizontalField
-    , Sidebar
-    , attendanceIcon
-    , backTextButton
+    ( attendanceIcon
     , box
     , centeredTitle
     , checkOrCross
     , column
     , columns
+    , container
     , divider
     , emailLink
     , errorBox
-    , horizontalField
-    , linkButton
+    , form
     , modal
     , multilineTooltip
     , narrowColumn
@@ -21,21 +18,22 @@ module Components.Basics exposing
     , remoteContent
     , remoteContentFull
     , renderIfHasPermission
+    , section
     , sidebar
     , spinner
     , submissionStateBox
     , subtitle
     , title
+    , title4
     , tooltip
     , tooltipRight
     )
 
 import Error exposing (GreaseError(..))
-import Html exposing (Html, a, article, div, h1, h3, i, input, label, p, span, text)
-import Html.Attributes exposing (attribute, class, hidden, href, id, name, placeholder, style, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html exposing (Html, a, article, div, h1, h3, h4, i, p, span, text)
+import Html.Attributes exposing (attribute, class, hidden, href, id, style)
+import Html.Events exposing (onClick, onSubmit)
 import Models.Event exposing (Event)
-import Route exposing (Route)
 import Utils exposing (Common, RemoteData(..), SubmissionState(..), eventIsOver, formatPhone, permittedTo, submissionStateBoxId)
 
 
@@ -65,6 +63,11 @@ centeredTitle content =
     h1 [ class "title", style "text-align" "center" ] [ text content ]
 
 
+title4 : String -> Html msg
+title4 content =
+    h4 [ class "title is-4" ] [ text content ]
+
+
 subtitle : String -> Html msg
 subtitle content =
     h3 [ class "subtitle is-3", style "text-align" "center" ] [ text content ]
@@ -90,11 +93,25 @@ box content =
     div [ class "box" ] content
 
 
+section : List (Html msg) -> Html msg
+section =
+    Html.section [ class "section" ]
+
+
+container : List (Html msg) -> Html msg
+container =
+    div [ class "container" ]
+
+
+form : msg -> List (Html msg) -> Html msg
+form submit =
+    Html.form [ onSubmit submit ]
+
+
 tooltip : String -> List (Html.Attribute msg)
 tooltip content =
     [ class "tooltip is-tooltip"
     , style "cursor" "pointer"
-    , style "display" "inline"
     , attribute "data-tooltip" content
     ]
 
@@ -137,60 +154,6 @@ divider content =
             , attribute "data-content" content
             ]
             []
-
-
-backTextButton : String -> msg -> Html msg
-backTextButton content backMsg =
-    span
-        [ style "display" "inline-block"
-        , style "vertical-align" "middle"
-        , style "cursor" "pointer"
-        , onClick backMsg
-        ]
-        [ i
-            [ style "display" "inline-block"
-            , style "vertical-align" "middle"
-            , class "fas fa-angle-left"
-            , style "font-size" "30px"
-            ]
-            []
-        , text " "
-        , span [ style "display" "inline-block", style "vertical-align" "middle" ] [ text content ]
-        ]
-
-
-linkButton : String -> Route -> Html msg
-linkButton content route =
-    a [ class "button", Route.href route ] [ text content ]
-
-
-type alias HorizontalField msg =
-    { label : String
-    , name : String
-    , type_ : String
-    , value : String
-    , placeholder : String
-    , onInput : String -> msg
-    }
-
-
-horizontalField : HorizontalField msg -> Html msg
-horizontalField field =
-    div [ class "field is-horizontal" ]
-        [ div [ class "field-label is-normal" ]
-            [ label [ class "label", attribute "for" field.name ] [ text field.label ] ]
-        , div [ class "control" ]
-            [ input
-                [ class "input"
-                , name field.name
-                , type_ field.type_
-                , value field.value
-                , onInput field.onInput
-                , placeholder field.placeholder
-                ]
-                []
-            ]
-        ]
 
 
 attendanceIcon : Common -> Event -> Html msg

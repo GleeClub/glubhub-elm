@@ -1,12 +1,14 @@
 module Page.Minutes exposing (Model, Msg(..), init, update, view)
 
 import Components.Basics as Basics
+import Components.Buttons as Buttons
 import Components.DeleteModal exposing (deleteModal)
+import Components.Forms as Forms exposing (textInput)
 import Components.SelectableList exposing (selectableListFull)
 import Error exposing (GreaseResult)
-import Html exposing (Html, a, div, input, li, p, section, td, text, ul)
-import Html.Attributes exposing (class, id, placeholder, required, style, type_, value)
-import Html.Events exposing (on, onClick, onInput)
+import Html exposing (Html, a, br, div, li, p, section, td, text, ul)
+import Html.Attributes exposing (class, id, style)
+import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Maybe.Extra exposing (filter, isJust)
@@ -23,8 +25,6 @@ import Utils
         , deleteRequest
         , deployEditor
         , getRequest
-        , isLoadingClass
-        , isPrimaryClass
         , mapLoaded
         , optionalSingleton
         , permittedTo
@@ -45,7 +45,7 @@ type alias Model =
     , minutes : RemoteData (List MeetingMinutes)
     , selected : RemoteData ( MeetingMinutes, FullMinutesTab )
     , state : SubmissionState
-    , expanded : Bool
+    , showAllMinutes : Bool
     }
 
 
@@ -81,7 +81,7 @@ init common route =
       , minutes = Loading
       , selected = selectedMinutes
       , state = NotSentYet
-      , expanded = False
+      , showAllMinutes = False
       }
     , Cmd.batch commands
     )
@@ -90,6 +90,11 @@ init common route =
 minutesEditorId : String
 minutesEditorId =
     "minutesEditor"
+
+
+newMinutesTitle : String
+newMinutesTitle =
+    "New Meeting"
 
 
 
@@ -112,11 +117,6 @@ type Msg
     | CancelDeletingMinutes
     | SendDeleteMinutes
     | OnDeleteMinutes (GreaseResult Int)
-
-
-newMinutesTitle : String
-newMinutesTitle =
-    "New Meeting"
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -271,7 +271,7 @@ update msg model =
             )
 
         ToggleShowAllMinutes ->
-            ( { model | expanded = not model.expanded }, Cmd.none )
+            ( { model | showAllMinutes = not model.showAllMinutes }, Cmd.none )
 
         TryToDeleteMinutes ->
             case model.selected of
@@ -448,11 +448,8 @@ createNewMinutes common =
     let
         value =
             Encode.object [ ( "name", Encode.string newMinutesTitle ) ]
-
-        idDecoder =
-            Decode.field "id" Decode.int
     in
-    postRequestFull common "/meeting_minutes" value idDecoder
+    postRequestFull common "/meeting_minutes" value Utils.decodeId
         |> Task.attempt OnCreateNewMinutes
 
 
@@ -513,6 +510,19 @@ simplifyFullMinutesTab fullTab =
 
 view : Model -> Html Msg
 view model =
+    Basics.section
+        [ Basics.container
+            [ Basics.columns
+                [ minutesList model
+                , Basics.column
+                    [ viewSelectedMinutes model ]
+                ]
+            ]
+        ]
+
+
+minutesList : Model -> Html Msg
+minutesList model =
     let
         isSelected minutes =
             model.selected
@@ -521,63 +531,53 @@ view model =
                 |> Maybe.withDefault False
 
         textButton isPrimary clickHandler buttonText =
-            div
-                [ class "field is-grouped is-grouped-centered"
-                , style "padding-bottom" "5px"
-                ]
-                [ p [ class "control" ]
-                    [ a
-                        [ class <| "button" ++ Utils.isPrimaryClass isPrimary
-                        , onClick clickHandler
+            div [ style "padding-bottom" "5px" ]
+                [ Buttons.group
+                    { alignment = Buttons.AlignCenter
+                    , connected = False
+                    , buttons =
+                        [ Buttons.button
+                            { content = buttonText
+                            , onClick = Just clickHandler
+                            , attrs =
+                                [ Buttons.Color Buttons.IsPrimary ]
+                                    |> List.filter (\_ -> isPrimary)
+                            }
                         ]
-                        [ text buttonText ]
-                    ]
+                    }
                 ]
-
-        minutesList =
-            selectableListFull
-                { listItems =
-                    if not model.expanded then
-                        model.minutes |> mapLoaded (List.take 10)
-
-                    else
-                        model.minutes
-                , render = \minutes -> [ td [] [ text minutes.name ] ]
-                , onSelect = \minutes -> SelectMinutes minutes.id
-                , messageIfEmpty = "No minutes"
-                , isSelected = isSelected
-                , contentAtTop =
-                    Basics.renderIfHasPermission model.common editMinutes <|
-                        textButton True CreateNewMinutes "+ Add New Minutes"
-                , contentAtBottom =
-                    if
-                        model.minutes
-                            |> remoteToMaybe
-                            |> Maybe.map (\minutes -> List.length minutes > 10)
-                            |> Maybe.withDefault False
-                    then
-                        textButton False ToggleShowAllMinutes <|
-                            if model.expanded then
-                                "Hide old minutes..."
-
-                            else
-                                "Show old minutes..."
-
-                    else
-                        text ""
-                }
     in
-    div [ id "minutes" ]
-        [ section [ class "section" ]
-            [ div [ class "container" ]
-                [ div [ class "columns" ]
-                    [ minutesList
-                    , div [ class "column" ]
-                        [ viewSelectedMinutes model ]
-                    ]
-                ]
-            ]
-        ]
+    selectableListFull
+        { listItems =
+            if model.showAllMinutes then
+                model.minutes
+
+            else
+                model.minutes |> mapLoaded (List.take 10)
+        , render = \minutes -> [ td [] [ text minutes.name ] ]
+        , onSelect = \minutes -> SelectMinutes minutes.id
+        , messageIfEmpty = "No minutes"
+        , isSelected = isSelected
+        , contentAtTop =
+            Basics.renderIfHasPermission model.common editMinutes <|
+                textButton True CreateNewMinutes "+ Add New Minutes"
+        , contentAtBottom =
+            if
+                model.minutes
+                    |> remoteToMaybe
+                    |> Maybe.map (\minutes -> List.length minutes > 10)
+                    |> Maybe.withDefault False
+            then
+                textButton False ToggleShowAllMinutes <|
+                    if model.showAllMinutes then
+                        "Hide old minutes..."
+
+                    else
+                        "Show old minutes..."
+
+            else
+                text ""
+        }
 
 
 viewSelectedMinutes : Model -> Html Msg
@@ -617,7 +617,7 @@ selectedMinutesTabBar user selectedTab =
         div [ class "tabs" ] [ ul [] tabs ]
 
     else
-        div [ style "display" "none" ] []
+        text ""
 
 
 tabName : MinutesTab -> String
@@ -652,16 +652,9 @@ tabIsSelected currentTab tab =
 singleTab : MinutesTab -> FullMinutesTab -> Html Msg
 singleTab tab selectedTab =
     li
-        [ class <|
-            if tabIsSelected selectedTab tab then
-                "is-active"
-
-            else
-                ""
-        ]
+        [ class <| Utils.isActiveClass (tabIsSelected selectedTab tab) ]
         [ a
-            [ onClick <| SelectTab tab
-            ]
+            [ onClick <| SelectTab tab ]
             [ text <| tabName tab ]
         ]
 
@@ -682,6 +675,7 @@ selectedMinutesTab minutes tab user =
         FullEditMinutes context ->
             if user |> Maybe.map (permittedTo editMinutes) |> Maybe.withDefault False then
                 [ p [] [ editHeader context ]
+                , br [] []
                 , p [] [ minutesEditor context ]
                 , case context.state of
                     ErrorSending error ->
@@ -690,25 +684,27 @@ selectedMinutesTab minutes tab user =
                     _ ->
                         text ""
                 , context.deleteState
-                    |> Maybe.map
-                        (\state ->
-                            deleteModal
-                                { title = "Delete this meeting?"
-                                , content =
-                                    div []
-                                        [ text "Are you sure you want to delete these meeting"
-                                        , text " minutes? You can't undo that."
-                                        ]
-                                , cancel = CancelDeletingMinutes
-                                , confirm = SendDeleteMinutes
-                                , state = state
-                                }
-                        )
+                    |> Maybe.map deleteMinutesModal
                     |> Maybe.withDefault (text "")
                 ]
 
             else
                 [ text "Slow down, cowboy! Who said you could edit these here documents?" ]
+
+
+deleteMinutesModal : SubmissionState -> Html Msg
+deleteMinutesModal state =
+    deleteModal
+        { title = "Delete this meeting?"
+        , content =
+            div []
+                [ text "Are you sure you want to delete these meeting "
+                , text "minutes? You can't undo that."
+                ]
+        , cancel = CancelDeletingMinutes
+        , confirm = SendDeleteMinutes
+        , state = state
+        }
 
 
 minutesEditor : EditMinutesContext -> Html Msg
@@ -739,66 +735,64 @@ editHeader context =
             context.minutes
 
         titleField =
-            div [ class "field has-addons is-expanded" ]
-                [ p [ class "control" ]
-                    [ a [ class "button is-static" ] [ text "Title" ] ]
-                , p [ class "control" ]
-                    [ input
-                        [ class "input"
-                        , type_ "text"
-                        , value context.minutes.name
-                        , placeholder "Secret Evil Meeting of Doom"
-                        , required True
-                        , onInput
-                            (\name -> UpdateEditingMinutes { minutes | name = name })
-                        ]
-                        []
+            textInput Forms.string
+                { value = context.minutes.name
+                , onInput = \name -> UpdateEditingMinutes { minutes | name = name }
+                , attrs =
+                    [ Forms.Prefix "Title"
+                    , Forms.Placeholder "Secret Evil Meeting of Doom"
+                    , Forms.RequiredField True
                     ]
-                ]
+                }
 
         publicOrPrivate =
-            div [ class "field has-addons" ]
-                [ p [ class "control" ]
-                    [ a
-                        [ class <| "button" ++ isPrimaryClass context.isPublic
-                        , onClick <| SwitchEditingPublicOrPrivate True
-                        ]
-                        [ text "Public" ]
+            Buttons.group
+                { alignment = Buttons.AlignLeft
+                , connected = True
+                , buttons =
+                    [ Buttons.button
+                        { content = "Public"
+                        , onClick = Just <| SwitchEditingPublicOrPrivate True
+                        , attrs =
+                            [ Buttons.Color Buttons.IsPrimary ]
+                                |> List.filter (\_ -> context.isPublic)
+                        }
+                    , Buttons.button
+                        { content = "Private"
+                        , onClick = Just <| SwitchEditingPublicOrPrivate False
+                        , attrs =
+                            [ Buttons.Color Buttons.IsPrimary ]
+                                |> List.filter (\_ -> not context.isPublic)
+                        }
                     ]
-                , div [ class "control" ]
-                    [ a
-                        [ class <| "button" ++ isPrimaryClass (not context.isPublic)
-                        , onClick <| SwitchEditingPublicOrPrivate False
-                        ]
-                        [ text "Private" ]
-                    ]
-                ]
+                }
 
         saveButton =
-            div [ class "field is-grouped is-grouped-right" ]
-                [ p [ class "control" ]
-                    [ a
-                        [ class <| "button is-primary" ++ isLoadingClass (context.state == Sending)
-                        , onClick SaveEditingMinutes
-                        ]
-                        [ text "Save" ]
+            Buttons.group
+                { alignment = Buttons.AlignRight
+                , connected = False
+                , buttons =
+                    [ Buttons.button
+                        { content = "Save"
+                        , onClick = Just SaveEditingMinutes
+                        , attrs =
+                            [ Buttons.Color Buttons.IsPrimary
+                            , Buttons.IsLoading (context.state == Sending)
+                            ]
+                        }
+                    , Buttons.button
+                        { content = "Delete"
+                        , onClick = Just <| SwitchEditingPublicOrPrivate False
+                        , attrs =
+                            [ Buttons.Color Buttons.IsDanger
+                            , Buttons.IsLoading (context.deleteState == Just Sending)
+                            ]
+                        }
                     ]
-                , p [ class "control" ]
-                    [ a
-                        [ class <| "button is-danger" ++ isLoadingClass (context.deleteState == Just Sending)
-                        , onClick TryToDeleteMinutes
-                        ]
-                        [ text "Delete" ]
-                    ]
-                ]
+                }
     in
-    div
-        [ class "field is-horizontal is-expanded"
-        , style "margin-bottom" "10px"
-        ]
-        [ div [ class "field-body" ]
-            [ publicOrPrivate
-            , titleField
-            , saveButton
-            ]
+    Forms.inputWrapper [ Forms.Horizontal, Forms.IsExpanded ]
+        [ publicOrPrivate
+        , titleField
+        , saveButton
         ]
