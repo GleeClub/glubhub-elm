@@ -19,6 +19,14 @@
     path{
       stroke: coral;
     }
+
+    .domain{
+      stroke-linecap: round;
+      stroke-width: 5;
+    }
+    .tick line{
+      stroke: none;
+    }
   </style>
 </head>
 <body>
@@ -47,7 +55,7 @@
       var timelineLineWidth = 5;
 
       var parseTime = d3.timeParse("%Q");
-      var y = d3.scaleLinear().range([height-20, 10]);
+      var y = d3.scaleTime().range([height-20, 10]);
 
       d3.json("https://gleeclub.gatech.edu/cgi-bin/api/week_of_events")
       .then(function(data){
@@ -59,14 +67,13 @@
         //this needs to go from monday to sunday
         var now = new Date();
         monday = d3.timeMonday();
-        var sunday = monday.getTime() + (7*86400000) - 1;
+        var sunday = new Date();
+        sunday.setTime(monday.getTime() + (7*86400000) - 1);
         y.domain([sunday, monday]);
         timeline.append("g")
           .attr("transform", "translate("+(circleX-1)+",0)")
-          .attr("stroke-width", timelineLineWidth)
-          .attr("stroke-linecap", "round")
-          .call(d3.axisLeft(y).ticks(0).tickSizeOuter(0));
-          // .call(d3.axisLeft(y).ticks(d3.timeDay.count(monday, sunday)).tickFormat(d3.timeFormat("%a")).tickSizeOuter(0));
+          // .call(d3.axisLeft(y).ticks(0).tickSizeOuter(0));
+          .call(d3.axisLeft(y).ticks(9).tickFormat(d3.timeFormat("%a")).tickSizeOuter(0));
 
         timeline.selectAll("circle")
           .data(data)
@@ -81,7 +88,8 @@
           .attr("class", "dot now")
           .attr("cy", function(d) { return y(now); })
           .attr("cx", circleX)
-          .attr("r", timelineLineWidth/2)
+          .attr("r", timelineLineWidth/2);
+
         timeline.selectAll("p")
           .data(data)
           .enter()
