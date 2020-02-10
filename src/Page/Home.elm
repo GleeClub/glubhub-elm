@@ -87,8 +87,8 @@ attendanceMessage enrollment finalGrade =
     else if finalGrade >= 90.0 then
         "Ayy lamo nice."
 
-            else if grades.finalGrade >= 80.0 then
-                "OK not bad, I guess."
+    else if finalGrade >= 80.0 then
+        "OK not bad, I guess."
 
     else if finalGrade >= 70.0 then
         "Pls"
