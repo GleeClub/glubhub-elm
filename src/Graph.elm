@@ -3,9 +3,8 @@ module Graph exposing (HoveredEvent, graphGrades)
 -- import Color
 
 import Axis
-import Color exposing (Color)
-import Html.Events exposing (on)
 import Html.Attributes exposing (id)
+import Html.Events exposing (on)
 import Json.Decode as Decode
 import Models.Event exposing (Event)
 import Models.Info exposing (Semester)
@@ -13,12 +12,12 @@ import Path exposing (Path)
 import Scale exposing (ContinuousScale)
 import Shape
 import Time exposing (Posix)
-import TypedSvg exposing (circle, g, svg, defs, linearGradient, stop)
-import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, transform, viewBox, gradientTransform, offset, stopColor, rotate)
+import TypedSvg exposing (circle, defs, g, linearGradient, stop, svg)
+import TypedSvg.Attributes exposing (class, cx, cy, fill, gradientTransform, offset, r, stopColor, stroke, transform, viewBox)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
 import TypedSvg.Events exposing (onMouseLeave)
-import TypedSvg.Types exposing (Fill(..), Length(..), Transform(..), Paint(..))
+import TypedSvg.Types exposing (Length(..), Paint(..), Transform(..))
 import Utils exposing (goldColor)
 
 
@@ -37,9 +36,19 @@ padding =
     30
 
 
-gray : Color
-gray =
-    Color.rgb 0.7 0.7 0.7
+definitions : Svg msg
+definitions =
+    defs []
+        [ linearGradient [ id gradientId, gradientTransform [ Rotate 90.0 0.0 0.0 ] ]
+            [ stop [ offset "0%", stopColor "lightgrey" ] []
+            , stop [ offset "100%", stopColor "darkgrey" ] []
+            ]
+        ]
+
+
+gradientId : String
+gradientId =
+    "attendanceGradient"
 
 
 xScale : Semester -> ContinuousScale Time.Posix
@@ -93,7 +102,7 @@ eventPoint semester hoverMsg event =
     in
     circle
         [ r <| Px 4
-        , fill <| Fill goldColor
+        , fill <| Paint goldColor
         , on "mousedown" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , on "mouseenter" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , onMouseLeave (hoverMsg Nothing)
@@ -126,7 +135,8 @@ graphGrades : Semester -> List Event -> (Maybe HoveredEvent -> msg) -> Svg msg
 graphGrades semester events hoverMsg =
     let
         callTimesAndScores =
-            events |> List.map (\event -> ( event.callTime, eventPartialScore event ))
+            events
+                |> List.map (\event -> ( event.callTime, eventPartialScore event ))
 
         pastEvents =
             case ( callTimesAndScores |> List.head, callTimesAndScores |> List.reverse |> List.head ) of
@@ -137,37 +147,23 @@ graphGrades semester events hoverMsg =
 
                 ( _, _ ) ->
                     []
+
+        eventPath =
+            g [ transform [ Translate padding padding ], class [ "series" ] ] <|
+                Path.element (area semester pastEvents)
+                    [ strokeWidth 2, fill <| Reference gradientId ]
+                    :: Path.element (line semester pastEvents)
+                        [ stroke <| Paint goldColor, strokeWidth 2, fill PaintNone ]
+                    :: (events |> List.map (eventPoint semester hoverMsg))
     in
     svg [ viewBox 0 0 w h ]
         [ g [ transform [ Translate (padding - 1) (h - padding) ] ]
             [ xAxis semester ]
         , g [ transform [ Translate (padding - 1) padding ] ]
             [ yAxis ]
-        , g [ transform [ Translate padding padding ], class [ "series" ] ] <|
-            Path.element (area semester pastEvents)
-                [ strokeWidth 2, fill <| Fill (Reference "attendanceGradient") ]
-                :: Path.element (line semester pastEvents)
-                    [ stroke goldColor, strokeWidth 2, fill FillNone ]
-                :: (events |> List.map (eventPoint semester hoverMsg))
-        , defs [] 
-            [ linearGradient [ id "attendanceGradient", gradientTransform  [Rotate 90.0 0.0 0.0]]
-                [ stop [ offset "0%", stopColor "lightgrey"] []
-                , stop [ offset "100%", stopColor "darkgrey"] []]
-            ]
+        , eventPath
+        , definitions
         ]
-
-
-
--- <style>
--- .line {
---   stroke: #b4a46a;
---   fill: url("#attendanceGradient");
---   stroke-width: 2;
--- }
--- .attendanceDot {
---   fill: #b4a46a;
--- }
--- </style>
 
 
 type alias HoveredEvent =
