@@ -5,6 +5,7 @@ module Graph exposing (HoveredEvent, graphGrades)
 import Axis
 import Color exposing (Color)
 import Html.Events exposing (on)
+import Html.Attributes exposing (id)
 import Json.Decode as Decode
 import Models.Event exposing (Event)
 import Models.Info exposing (Semester)
@@ -12,12 +13,12 @@ import Path exposing (Path)
 import Scale exposing (ContinuousScale)
 import Shape
 import Time exposing (Posix)
-import TypedSvg exposing (circle, g, svg)
-import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, transform, viewBox)
+import TypedSvg exposing (circle, g, svg, defs, linearGradient, stop)
+import TypedSvg.Attributes exposing (class, cx, cy, fill, r, stroke, transform, viewBox, gradientTransform, offset, stopColor, rotate)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
 import TypedSvg.Events exposing (onMouseLeave)
-import TypedSvg.Types exposing (Fill(..), Length(..), Transform(..))
+import TypedSvg.Types exposing (Fill(..), Length(..), Transform(..), Paint(..))
 import Utils exposing (goldColor)
 
 
@@ -91,9 +92,7 @@ eventPoint semester hoverMsg event =
             Scale.convert yScale (eventPartialScore event)
     in
     circle
-        [ r <| Px 2.5
-        , stroke Color.black
-        , strokeWidth 0.5
+        [ r <| Px 4
         , fill <| Fill goldColor
         , on "mousedown" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , on "mouseenter" (hoveredEventDecoder event |> Decode.map hoverMsg)
@@ -146,10 +145,15 @@ graphGrades semester events hoverMsg =
             [ yAxis ]
         , g [ transform [ Translate padding padding ], class [ "series" ] ] <|
             Path.element (area semester pastEvents)
-                [ strokeWidth 2, fill <| Fill gray ]
+                [ strokeWidth 2, fill <| Fill (Reference "attendanceGradient") ]
                 :: Path.element (line semester pastEvents)
                     [ stroke goldColor, strokeWidth 2, fill FillNone ]
                 :: (events |> List.map (eventPoint semester hoverMsg))
+        , defs [] 
+            [ linearGradient [ id "attendanceGradient", gradientTransform  [Rotate 90.0 0.0 0.0]]
+                [ stop [ offset "0%", stopColor "lightgrey"] []
+                , stop [ offset "100%", stopColor "darkgrey"] []]
+            ]
         ]
 
 
