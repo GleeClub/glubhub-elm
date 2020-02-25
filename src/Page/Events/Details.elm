@@ -450,7 +450,7 @@ officerInfoSection model =
                 }
             , br [] []
             , Buttons.button
-                { content = "Baleet this bitch"
+                { content = "Yeet this bitch into the void"
                 , onClick = Just <| ForSelf TryToDeleteEvent
                 , attrs = [ Buttons.Color Buttons.IsDanger, Buttons.IsOutlined ]
                 }
