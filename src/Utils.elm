@@ -4,6 +4,7 @@ port module Utils exposing
     , SubmissionState(..)
     , alert
     , checkSubmissionResult
+    , copyContent
     , deployEditor
     , eventIsOver
     , formatPhone
@@ -27,6 +28,7 @@ port module Utils exposing
     , scrollToElement
     , setOldToken
     , setToken
+    , setupTimeline
     , submissionStateBoxId
     )
 
@@ -287,13 +289,10 @@ optionalSingleton shouldRender content =
 
 
 
--- isLoadingClass : Bool -> String
--- isLoadingClass isLoading =
---     if isLoading then
---         " is-loading"
---     else
---         ""
 -- PORTS --
+
+
+port copyContent : String -> Cmd msg
 
 
 port setToken : Maybe String -> Cmd msg
@@ -312,3 +311,6 @@ port playPitch : Int -> Cmd msg
 
 
 port deployEditor : { elementId : String, content : String } -> Cmd msg
+
+
+port setupTimeline : String -> Cmd msg

@@ -10,6 +10,7 @@ import Html.Events exposing (onSubmit)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
 import List.Extra as List
+import Maybe.Extra as Maybe exposing (isJust)
 import Models.Event exposing (Event, eventDecoder)
 import Models.Info exposing (Semester, Uniform, semesterDecoder)
 import Request
@@ -66,13 +67,27 @@ eventFormFromEvent common event =
     { name = event.name
     , semester = event.semester
     , type_ = event.type_
-    , callTime = event.callTime |> twentyFourHourTimeFormatter common.timeZone
-    , callDate = event.callTime |> hyphenDateFormatter common.timeZone
-    , releaseTime = event.callTime |> twentyFourHourTimeFormatter common.timeZone
-    , releaseDate = event.callTime |> hyphenDateFormatter common.timeZone
+    , callTime =
+        event.callTime
+            |> twentyFourHourTimeFormatter common.timeZone
+    , callDate =
+        event.callTime
+            |> hyphenDateFormatter common.timeZone
+    , releaseTime =
+        event.releaseTime
+            |> Maybe.map (twentyFourHourTimeFormatter common.timeZone)
+            |> Maybe.withDefault ""
+    , releaseDate =
+        event.releaseTime
+            |> Maybe.map (hyphenDateFormatter common.timeZone)
+            |> Maybe.withDefault ""
     , points = Just event.points
-    , comments = event.comments |> Maybe.withDefault ""
-    , location = event.location |> Maybe.withDefault ""
+    , comments =
+        event.comments
+            |> Maybe.withDefault ""
+    , location =
+        event.location
+            |> Maybe.withDefault ""
     , gigCount = event.gigCount
     , defaultAttend = event.defaultAttend
     }
@@ -220,7 +235,6 @@ serializeEventForm common event gig =
                 |> Maybe.withDefault Encode.null
     in
     Encode.object
-        -- event fields
         [ ( "name", Encode.string event.name )
         , ( "semester", Encode.string event.semester )
         , ( "type", Encode.string event.type_ )
@@ -231,18 +245,46 @@ serializeEventForm common event gig =
         , ( "location", Encode.string event.location )
         , ( "gigCount", Encode.bool event.gigCount )
         , ( "defaultAttend", Encode.bool event.defaultAttend )
-
-        -- gig fields
-        , ( "performanceTime", encodeDatetime event.callDate gig.performanceTime )
-        , ( "uniform", gig.uniform |> Maybe.map (.id >> Encode.int) |> Maybe.withDefault Encode.null )
-        , ( "contactName", Encode.string gig.contactName )
-        , ( "contactEmail", Encode.string gig.contactEmail )
-        , ( "contactPhone", Encode.string gig.contactPhone )
-        , ( "price", gig.price |> Maybe.map Encode.int |> Maybe.withDefault Encode.null )
-        , ( "public", Encode.bool gig.public )
-        , ( "summary", Encode.string gig.summary )
-        , ( "description", Encode.string gig.description )
+        , ( "gig", serializeGigForm common event gig )
         ]
+
+
+serializeGigForm : Common -> EditEventForm -> EditGigForm -> Encode.Value
+serializeGigForm common event gig =
+    let
+        encodeDatetime dateString timeString =
+            parseFormDateAndTimeString common dateString timeString
+                |> Maybe.map (posixToMillis >> Encode.int)
+                |> Maybe.withDefault Encode.null
+
+        performanceTime =
+            parseFormDateAndTimeString common event.callDate gig.performanceTime
+                |> Maybe.map (posixToMillis >> Encode.int)
+    in
+    if
+        isJust performanceTime
+            || isJust gig.uniform
+            || (not << String.isEmpty) gig.contactName
+            || (not << String.isEmpty) gig.contactEmail
+            || (not << String.isEmpty) gig.contactPhone
+            || isJust gig.price
+            || (not << String.isEmpty) gig.summary
+            || (not << String.isEmpty) gig.description
+    then
+        Encode.object
+            [ ( "performanceTime", encodeDatetime event.callDate gig.performanceTime )
+            , ( "uniform", gig.uniform |> Maybe.map (.id >> Encode.int) |> Maybe.withDefault Encode.null )
+            , ( "contactName", Encode.string gig.contactName )
+            , ( "contactEmail", Encode.string gig.contactEmail )
+            , ( "contactPhone", Encode.string gig.contactPhone )
+            , ( "price", gig.price |> Maybe.map Encode.int |> Maybe.withDefault Encode.null )
+            , ( "public", Encode.bool gig.public )
+            , ( "summary", Encode.string gig.summary )
+            , ( "description", Encode.string gig.description )
+            ]
+
+    else
+        Encode.null
 
 
 
@@ -257,7 +299,6 @@ view model =
             [ leftColumnInEventForm model.event model.gig
             , middleColumnInEventForm model
             , rightColumnInEventForm model.state model.event model.gig
-            , Basics.submissionStateBox model.state
             ]
         ]
 

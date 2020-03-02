@@ -3,6 +3,7 @@ module Graph exposing (HoveredEvent, graphGrades)
 -- import Color
 
 import Axis
+import Color exposing (Color)
 import Html.Attributes exposing (id)
 import Html.Events exposing (on)
 import Json.Decode as Decode

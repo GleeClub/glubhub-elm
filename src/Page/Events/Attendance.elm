@@ -1,4 +1,4 @@
-module Page.Events.Attendance exposing (Model, Msg(..), init, update, view)
+module Page.Events.Attendance exposing (Model, Msg(..), groupAttendees, init, update, view)
 
 import Components.Basics as Basics
 import Components.Forms as Forms exposing (checkboxInput, textInput)

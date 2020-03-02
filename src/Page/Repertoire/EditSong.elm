@@ -1,5 +1,6 @@
 module Page.Repertoire.EditSong exposing (InternalMsg, Model, Msg, Translator, init, translator, update, view)
 
+import Base64
 import Components.Basics as Basics
 import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (checkboxInput, fileInput, selectInput, textInput, textareaInput)
@@ -283,9 +284,21 @@ removeLinkFromSong model linkId =
             model.song
 
         sectionMapper section =
-            { section | links = section.links |> List.filter (\link -> link.id /= linkId) }
+            { section
+                | links =
+                    section.links
+                        |> List.filter (\link -> link.id /= linkId)
+            }
     in
-    ( { model | state = Sending, song = { song | links = song.links |> List.map sectionMapper } }
+    ( { model
+        | state = Sending
+        , song =
+            { song
+                | links =
+                    song.links
+                        |> List.map sectionMapper
+            }
+      }
     , deleteSongLink model.common linkId
     )
 
@@ -434,14 +447,12 @@ uploadFile common file =
 
 serializeFile : File -> Task x Encode.Value
 serializeFile =
-    let
-        parseUrl =
-            String.split "base64,"
-                >> List.getAt 1
+    File.toBytes
+        >> Task.map
+            (Base64.fromBytes
                 >> Maybe.withDefault ""
                 >> Encode.string
-    in
-    File.toUrl >> Task.map parseUrl
+            )
 
 
 

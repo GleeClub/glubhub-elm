@@ -32,7 +32,7 @@ module Models.Event exposing
     )
 
 import Json.Decode as Decode exposing (Decoder, bool, float, int, nullable, string)
-import Json.Decode.Pipeline exposing (custom, optional, required)
+import Json.Decode.Pipeline exposing (optional, required)
 import Models.Admin exposing (AbsenceRequest, absenceRequestDecoder)
 import Models.Info
     exposing
@@ -69,24 +69,6 @@ type alias Event =
 
 eventDecoder : Decoder Event
 eventDecoder =
-    let
-        gigChecker json =
-            let
-                decoder : Decoder Int
-                decoder =
-                    Decode.field "uniform" int
-            in
-            case Decode.decodeValue decoder json of
-                Err _ ->
-                    Decode.succeed Nothing
-
-                Ok _ ->
-                    Decode.andThen
-                        (\x ->
-                            Decode.succeed <| Just x
-                        )
-                        gigDecoder
-    in
     Decode.succeed Event
         |> required "id" int
         |> required "name" string
@@ -100,7 +82,7 @@ eventDecoder =
         |> required "gigCount" bool
         |> required "defaultAttend" bool
         |> optional "section" (nullable string) Nothing
-        |> custom (Decode.value |> Decode.andThen gigChecker)
+        |> optional "gig" (nullable gigDecoder) Nothing
         |> optional "rsvpIssue" (nullable string) Nothing
         |> optional "attendance" (nullable simpleAttendanceDecoder) Nothing
         |> optional "change" (nullable simpleGradeChangeDecoder) Nothing

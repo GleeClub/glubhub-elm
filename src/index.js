@@ -5,6 +5,7 @@ import { Elm } from './Main.elm'
 import * as Tone from './Tone'
 import pell from './pell.min'
 import * as serviceWorker from './serviceWorker'
+import { setupTimeline } from './timeline'
 
 const tokenName = 'grease-token'
 const oldTokenName = 'old-grease-token'
@@ -48,6 +49,10 @@ app.ports.scrollToElement.subscribe(function(elementId) {
 app.ports.playPitch.subscribe(function(halfStepsFromA) {
   synth.triggerAttackRelease(Tone.Midi('A4').transpose(halfStepsFromA), '1n')
 })
+app.ports.copyContent.subscribe(function(elementId) {
+  document.querySelector('#' + elementId).select()
+  document.execCommand('copy')
+})
 app.ports.deployEditor.subscribe(function(editorInit) {
   setTimeout(() => {
     const editorElement = document.getElementById(editorInit.elementId)
@@ -71,6 +76,11 @@ app.ports.deployEditor.subscribe(function(editorInit) {
     })
     editor.content.innerHTML = editorInit.content
   }, 50)
+})
+app.ports.setupTimeline.subscribe(function inner(id) {
+  setTimeout(() => {
+    setupTimeline(id)
+  }, 500)
 })
 
 // If you want your app to work offline and load faster, you can change

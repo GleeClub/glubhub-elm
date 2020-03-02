@@ -11,7 +11,7 @@ import Html.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra exposing (find)
-import Maybe.Extra exposing (filter, isJust)
+import Maybe.Extra exposing (filter)
 import Models.Event exposing (Event, eventDecoder)
 import Page.Events.Attendance as Attendance
 import Page.Events.Attendees as Attendees
@@ -446,7 +446,7 @@ tabContent common ( event, eventTab ) =
                 , onClick = UnselectEvent
                 }
             , Basics.centeredTitle event.name
-            , eventTabs common event eventTab
+            , eventTabs common eventTab
             ]
     in
     case eventTab of
@@ -552,26 +552,14 @@ pageLink currentTab tab =
         [ a [ onClick <| ChangeTab tab ] [ text <| tabTitle tab ] ]
 
 
-eventTabs : Common -> Event -> FullEventTab -> Html Msg
-eventTabs common event currentTab =
+eventTabs : Common -> FullEventTab -> Html Msg
+eventTabs common currentTab =
     let
-        isGig =
-            Maybe.Extra.isJust event.gig
-
-        gigTabs =
-            [ EventSetlist, EventCarpools ]
-
         officerTabs =
             [ EventAttendance ]
 
         allTabs =
-            [ EventDetails, EventAttendees ]
-                ++ (if isGig then
-                        gigTabs
-
-                    else
-                        []
-                   )
+            [ EventDetails, EventAttendees, EventSetlist, EventCarpools ]
                 ++ (if
                         common.user
                             |> Maybe.map (permittedTo "edit-attendance")

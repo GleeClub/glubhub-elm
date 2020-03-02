@@ -351,7 +351,6 @@ serializeEventForm common createForm =
                 |> Maybe.withDefault Encode.null
     in
     Encode.object
-        -- event fields
         [ ( "name", Encode.string event.name )
         , ( "semester", Encode.string event.semester )
         , ( "type", Encode.string event.type_ )
@@ -362,17 +361,19 @@ serializeEventForm common createForm =
         , ( "location", Encode.string event.location )
         , ( "gigCount", Encode.bool event.gigCount )
         , ( "defaultAttend", Encode.bool event.defaultAttend )
-
-        -- gig fields
-        , ( "performanceTime", encodeDatetime event.callDate gig.performanceTime )
-        , ( "uniform", gig.uniform |> Maybe.map (.id >> Encode.int) |> Maybe.withDefault Encode.null )
-        , ( "contactName", Encode.string gig.contactName )
-        , ( "contactEmail", Encode.string gig.contactEmail )
-        , ( "contactPhone", Encode.string gig.contactPhone )
-        , ( "price", Encode.null )
-        , ( "public", Encode.bool gig.public )
-        , ( "summary", Encode.string gig.summary )
-        , ( "description", Encode.string gig.description )
+        , ( "gig"
+          , Encode.object
+                [ ( "performanceTime", encodeDatetime event.callDate gig.performanceTime )
+                , ( "uniform", gig.uniform |> Maybe.map (.id >> Encode.int) |> Maybe.withDefault Encode.null )
+                , ( "contactName", Encode.string gig.contactName )
+                , ( "contactEmail", Encode.string gig.contactEmail )
+                , ( "contactPhone", Encode.string gig.contactPhone )
+                , ( "price", Encode.null )
+                , ( "public", Encode.bool gig.public )
+                , ( "summary", Encode.string gig.summary )
+                , ( "description", Encode.string gig.description )
+                ]
+          )
         , ( "repeat", event.repeat |> periodToString |> Encode.string )
         , ( "repeatUntil", encodeDatetime event.repeatUntil "00:00" )
         ]
