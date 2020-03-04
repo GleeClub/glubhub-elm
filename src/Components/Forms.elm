@@ -473,7 +473,7 @@ selectInput inputType data =
                             (\v ->
                                 option
                                     [ value <| inputType.toString v
-                                    , selected (v == data.selected)
+                                    , selected (inputType.toString v == inputType.toString data.selected)
                                     ]
                                     [ text <| inputType.toString v ]
                             )

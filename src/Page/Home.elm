@@ -6,7 +6,7 @@ import Datetime exposing (dateFormatter, fullDateTimeFormatter)
 import Error exposing (GreaseResult)
 import Graph exposing (HoveredEvent, graphGrades)
 import Html exposing (Html, a, br, div, em, i, p, section, span, strong, text)
-import Html.Attributes exposing (class, href, style)
+import Html.Attributes exposing (class, height, href, id, style, width)
 import Json.Decode as Decode
 import List.Extra exposing (last)
 import Maybe.Extra exposing (filter, isJust, isNothing)
@@ -15,7 +15,8 @@ import Models.Info exposing (Enrollment)
 import Request
 import Task
 import Time exposing (Zone)
-import Utils exposing (Common, RemoteData(..), eventIsOver, resultToRemote, romanNumeral, roundToTwoDigits)
+import TypedSvg exposing (svg)
+import Utils exposing (Common, RemoteData(..), eventIsOver, resultToRemote, romanNumeral, roundToTwoDigits, setupTimeline)
 
 
 
@@ -31,7 +32,12 @@ type alias Model =
 
 init : Common -> ( Model, Cmd Msg )
 init common =
-    ( { common = common, events = Loading, hoveredEvent = Nothing }, loadEvents common )
+    ( { common = common, events = Loading, hoveredEvent = Nothing }, Cmd.batch [ setupTimeline timelineId, loadEvents common ] )
+
+
+timelineId : String
+timelineId =
+    "timeline-box"
 
 
 
@@ -231,7 +237,9 @@ upcomingEvents common futureEvents =
     Basics.column
         [ Basics.title "This Week"
         , Basics.box
-            [ timeline common futureEvents ]
+            [ div [ class "timeline" ]
+                [ svg [ id timelineId, width 500, height 500 ] [ Basics.spinner ] ]
+            ]
         ]
 
 

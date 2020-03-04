@@ -6,6 +6,7 @@ import Html exposing (Html, br, div, table, tbody, td, text, th, thead, tr)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Models.Event exposing (EventAttendee, eventAttendeeDecoder)
+import Page.Events.Attendance exposing (groupAttendees)
 import Request
 import Task
 import Utils exposing (Common, RemoteData(..), fullName, resultToRemote)
@@ -53,9 +54,19 @@ loadAttendees common eventId =
         |> Task.attempt OnLoadAttendees
 
 
-separateAttendees :
-    List EventAttendee
-    -> ( ( List EventAttendee, List EventAttendee ), ( List EventAttendee, List EventAttendee ) )
+type alias AttendeeGroups =
+    { attending : List ( String, SplitByConfirmed )
+    , notAttending : List ( String, SplitByConfirmed )
+    }
+
+
+type alias SplitByConfirmed =
+    { confirmed : List EventAttendee
+    , notConfirmed : List EventAttendee
+    }
+
+
+separateAttendees : List EventAttendee -> AttendeeGroups
 separateAttendees attendees =
     let
         ( attending, notAttending ) =
@@ -63,8 +74,11 @@ separateAttendees attendees =
 
         splitByConfirmed =
             List.partition (\attendee -> attendee.attendance.confirmed)
+                >> (\( c, nc ) -> { confirmed = c, notConfirmed = nc })
     in
-    ( splitByConfirmed attending, splitByConfirmed notAttending )
+    { attending = attending |> groupAttendees |> List.map (Tuple.mapSecond splitByConfirmed)
+    , notAttending = notAttending |> groupAttendees |> List.map (Tuple.mapSecond splitByConfirmed)
+    }
 
 
 
@@ -80,33 +94,40 @@ view model =
 attendeeTables : List EventAttendee -> Html Msg
 attendeeTables attendees =
     let
-        ( attending, notAttending ) =
+        separated =
             separateAttendees attendees
     in
     Basics.column
         [ Basics.centeredTitle "Attending"
-        , attendeeTable attending
+        , attendeeTable separated.attending
         , Basics.centeredTitle "Not Attending"
-        , attendeeTable notAttending
+        , attendeeTable separated.notAttending
         ]
 
 
-attendeeTable : ( List EventAttendee, List EventAttendee ) -> Html Msg
-attendeeTable ( confirmed, notConfirmed ) =
+attendeeTable : List ( String, SplitByConfirmed ) -> Html Msg
+attendeeTable sections =
     table [ class "table is-fullwidth" ]
-        [ thead []
-            [ tr []
-                [ th [] [ text "Confirmed" ]
-                , th [] [ text "Not Confirmed" ]
-                ]
-            ]
-        , tbody []
-            [ tr []
-                [ td [ style "width" "50%" ] <| attendeeNameList confirmed
-                , td [ style "width" "50%" ] <| attendeeNameList notConfirmed
-                ]
-            ]
-        ]
+        (sections
+            |> List.concatMap
+                (\( name, { confirmed, notConfirmed } ) ->
+                    [ thead []
+                        [ tr []
+                            [ th [] [ text name ]
+                            , th [] [ text "Confirmed" ]
+                            , th [] [ text "Not Confirmed" ]
+                            ]
+                        ]
+                    , tbody []
+                        [ tr []
+                            [ td [ style "width" "12%" ] []
+                            , td [ style "width" "44%" ] <| attendeeNameList confirmed
+                            , td [ style "width" "44%" ] <| attendeeNameList notConfirmed
+                            ]
+                        ]
+                    ]
+                )
+        )
 
 
 attendeeNameList : List EventAttendee -> List (Html Msg)

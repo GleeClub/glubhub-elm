@@ -5,12 +5,12 @@ import Components.Buttons as Buttons
 import Components.Forms as Forms exposing (fileInput)
 import Error exposing (GreaseResult, parseResponse)
 import File exposing (File)
-import Html exposing (Html, button, div, header, text)
-import Html.Attributes exposing (class)
+import Html exposing (Html, b, br, button, div, header, input, text)
+import Html.Attributes exposing (class, hidden, id, value)
 import Http
 import Json.Decode as Decode
 import Task
-import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert)
+import Utils exposing (Common, RemoteData(..), SubmissionState(..), alert, copyContent)
 
 
 
@@ -38,6 +38,11 @@ init common =
     )
 
 
+tokenTargetId : String
+tokenTargetId =
+    "token-target"
+
+
 
 ---- UPDATE ----
 
@@ -49,6 +54,7 @@ type Msg
     | SelectFrontendZip (Maybe File)
     | UploadFrontend
     | OnUploadFrontend (GreaseResult ())
+    | CopyToken
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -87,6 +93,9 @@ update msg model =
 
         OnUploadFrontend (Err error) ->
             ( { model | frontendState = ErrorSending error }, Cmd.none )
+
+        CopyToken ->
+            ( model, copyContent tokenTargetId )
 
 
 
@@ -165,6 +174,18 @@ view model =
 
                         _ ->
                             text ""
+                    ]
+                , div [ class "is-divider-vertical" ] []
+                , Basics.column
+                    [ b [] [ text "Copy your token:" ]
+                    , input [ id tokenTargetId, hidden True, value model.common.token ] []
+                    , br [] []
+                    , br [] []
+                    , Buttons.button
+                        { content = "Uno Tokeno"
+                        , onClick = Just CopyToken
+                        , attrs = []
+                        }
                     ]
                 ]
             ]

@@ -142,3 +142,30 @@ table.no-bottom-border td {
 table.is-hoverable tr.not-hoverable:hover {
   background-color: #fff;
 }
+
+.timeline body {
+  background-color: #fafafa;
+}
+
+.timeline .dot {
+  fill: #b4a46a;
+  stroke: white;
+}
+.timeline .now {
+  stroke: none;
+  fill: black;
+}
+.timeline .box-topper {
+  margin-bottom: 0;
+}
+.timeline path {
+  stroke: #b4a46a;
+}
+
+.timeline .domain {
+  stroke-linecap: round;
+  stroke-width: 5; /* Can this be bound somehow? */
+}
+.timeline .tick line {
+  stroke: none;
+}

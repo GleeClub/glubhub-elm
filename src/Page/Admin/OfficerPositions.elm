@@ -7,7 +7,7 @@ import Html exposing (Html, div, span, table, td, text, tr)
 import Html.Attributes exposing (style)
 import Json.Decode as Decode exposing (string)
 import Json.Encode as Encode
-import List.Extra exposing (find)
+import List.Extra as List exposing (find)
 import Models.Event exposing (Member, MemberRole, memberRoleDecoder)
 import Models.Info exposing (Role)
 import Request
@@ -82,10 +82,10 @@ removeMember : Model -> MemberRole -> ( Model, Cmd Msg )
 removeMember model memberRole =
     let
         memberRoleFilter r =
-            (r.role.name /= memberRole.role.name) || (r.member.email /= memberRole.member.email)
+            (r.role.name == memberRole.role.name) && (r.member.email == memberRole.member.email)
     in
     ( { model
-        | roles = model.roles |> mapLoaded (List.filter memberRoleFilter)
+        | roles = model.roles |> mapLoaded (List.filterNot memberRoleFilter)
         , state = Sending
       }
     , removeMemberRole model.common memberRole
@@ -202,14 +202,11 @@ roleRows allMembers memberRoles role =
             memberRoles
                 |> List.filter (\mr -> mr.role.name == role.name)
                 |> List.map .member
-
-        displayCount =
-            min role.maxQuantity (List.length membersWithRole + 1)
     in
     membersWithRole
         |> List.map (\m -> Just m)
         |> (\members -> members ++ [ Nothing ])
-        |> List.take displayCount
+        |> List.take role.maxQuantity
         |> List.map (memberDropdown role allMembers)
 
 
@@ -218,7 +215,7 @@ memberDropdown role allMembers selectedMember =
     let
         memberFormType =
             { toString = Maybe.map fullName >> Maybe.withDefault "(nobody)"
-            , fromString = \email -> allMembers |> find (\m -> m.email == email)
+            , fromString = \name -> allMembers |> find (\m -> fullName m == name)
             , textType = Forms.Text
             }
     in
