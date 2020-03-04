@@ -14,7 +14,7 @@ import Scale exposing (ContinuousScale)
 import Shape
 import Time exposing (Posix)
 import TypedSvg exposing (circle, defs, g, linearGradient, stop, svg)
-import TypedSvg.Attributes exposing (class, cx, cy, fill, gradientTransform, offset, r, stopColor, stroke, transform, viewBox, fillOpacity, cursor)
+import TypedSvg.Attributes exposing (class, cx, cy, fill, gradientTransform, offset, r, stopColor, stroke, transform, viewBox, fillOpacity, cursor, stopOpacity)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
 import TypedSvg.Events exposing (onMouseLeave)
@@ -36,22 +36,12 @@ padding : Float
 padding =
     30
 
-darkGold : Color
-darkGold =
-    let
-        hsla =
-            goldColor |> Color.toHsla
-    in
-    { hsla | alpha = hsla.alpha * 0.5 }
-        |> Color.fromHsla
-
-
 definitions : Svg msg
 definitions =
     defs []
         [ linearGradient [ id gradientId, gradientTransform [ Rotate 90.0 0.0 0.0 ] ]
-            [ stop [ offset "0%", stopColor (Color.toCssString darkGold) ] []
-            , stop [ offset "100%", stopColor (Color.toCssString goldColor) ] []
+            [ stop [ offset "0%", stopColor (Color.toCssString goldColor), stopOpacity <| Opacity 0.85 ] []
+            , stop [ offset "100%", stopColor (Color.toCssString goldColor), stopOpacity <| Opacity 0.0 ] []
             ]
         ]
 
