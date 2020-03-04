@@ -1,6 +1,6 @@
 module Graph exposing (HoveredEvent, graphGrades)
 
--- import Color
+import Color exposing (Color, hsl)
 
 import Axis
 import Html.Attributes exposing (id)
@@ -13,11 +13,11 @@ import Scale exposing (ContinuousScale)
 import Shape
 import Time exposing (Posix)
 import TypedSvg exposing (circle, defs, g, linearGradient, stop, svg)
-import TypedSvg.Attributes exposing (class, cx, cy, fill, gradientTransform, offset, r, stopColor, stroke, transform, viewBox)
+import TypedSvg.Attributes exposing (class, cx, cy, fill, gradientTransform, offset, r, stopColor, stroke, transform, viewBox, fillOpacity, cursor)
 import TypedSvg.Attributes.InPx exposing (strokeWidth)
 import TypedSvg.Core exposing (Svg)
 import TypedSvg.Events exposing (onMouseLeave)
-import TypedSvg.Types exposing (Length(..), Paint(..), Transform(..))
+import TypedSvg.Types exposing (Length(..), Paint(..), Transform(..), Opacity(..), Cursor(..))
 import Utils exposing (goldColor)
 
 
@@ -35,13 +35,22 @@ padding : Float
 padding =
     30
 
+darkGold : Color
+darkGold =
+    let
+        hsla =
+            goldColor |> Color.toHsla
+    in
+    { hsla | alpha = hsla.alpha * 0.5 }
+        |> Color.fromHsla
+
 
 definitions : Svg msg
 definitions =
     defs []
         [ linearGradient [ id gradientId, gradientTransform [ Rotate 90.0 0.0 0.0 ] ]
-            [ stop [ offset "0%", stopColor "lightgrey" ] []
-            , stop [ offset "100%", stopColor "darkgrey" ] []
+            [ stop [ offset "0%", stopColor (Color.toCssString darkGold) ] []
+            , stop [ offset "100%", stopColor (Color.toCssString goldColor) ] []
             ]
         ]
 
@@ -63,7 +72,7 @@ yScale =
 
 xAxis : Semester -> Svg msg
 xAxis semester =
-    Axis.bottom [ Axis.tickCount 20 ] (xScale semester)
+    Axis.bottom [ Axis.tickCount 5, Axis.tickSizeOuter 0 ] (xScale semester)
 
 
 yAxis : Svg msg
@@ -103,11 +112,29 @@ eventPoint semester hoverMsg event =
     circle
         [ r <| Px 4
         , fill <| Paint goldColor
+        , cx <| Px xPos
+        , cy <| Px yPos
+        ]
+        []
+
+clickPoint : Semester -> (Maybe HoveredEvent -> msg) -> Event -> Svg msg
+clickPoint semester hoverMsg event =
+    let
+        xPos =
+            Scale.convert (xScale semester) event.callTime
+
+        yPos =
+            Scale.convert yScale (eventPartialScore event)
+    in
+    circle
+        [ r <| Px 8
+        , fillOpacity <| Opacity 0.0
         , on "mousedown" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , on "mouseenter" (hoveredEventDecoder event |> Decode.map hoverMsg)
         , onMouseLeave (hoverMsg Nothing)
         , cx <| Px xPos
         , cy <| Px yPos
+        , cursor CursorPointer
         ]
         []
 
@@ -155,6 +182,7 @@ graphGrades semester events hoverMsg =
                     :: Path.element (line semester pastEvents)
                         [ stroke <| Paint goldColor, strokeWidth 2, fill PaintNone ]
                     :: (events |> List.map (eventPoint semester hoverMsg))
+                    ++ (events |> List.map (clickPoint semester hoverMsg))
     in
     svg [ viewBox 0 0 w h ]
         [ g [ transform [ Translate (padding - 1) (h - padding) ] ]
