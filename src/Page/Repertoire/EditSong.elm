@@ -406,21 +406,22 @@ uploadMidi =
 uploadLinkWithFile : String -> Common -> Int -> String -> File -> Cmd Msg
 uploadLinkWithFile type_ common songId linkName file =
     let
-        body =
+        body fileBody =
             Encode.object
                 [ ( "type", Encode.string type_ )
                 , ( "name", Encode.string linkName )
-                , ( "target", Encode.string (File.name file) )
+                , ( "target", fileBody )
                 ]
 
         url =
             "/repertoire/" ++ String.fromInt songId ++ "/links"
 
         createLink =
-            Request.postReturningId common url body
+            Request.postReturningId common url
     in
-    uploadFile common file
-        |> Task.andThen (\_ -> createLink)
+    encodeFile file
+        |> Task.map body
+        |> Task.andThen createLink
         |> Task.andThen (loadSongLink common)
         |> Task.attempt
             (\result ->
@@ -429,20 +430,16 @@ uploadLinkWithFile type_ common songId linkName file =
             )
 
 
-uploadFile : Common -> File -> Task GreaseError ()
-uploadFile common file =
-    let
-        url =
-            "/repertoire/upload"
-
-        body fileContent =
-            Encode.object
-                [ ( "path", Encode.string (File.name file) )
-                , ( "content", fileContent )
-                ]
-    in
+encodeFile : File -> Task x Encode.Value
+encodeFile file =
     serializeFile file
-        |> Task.andThen (\f -> Request.post common url (body f))
+        |> Task.map
+            (\fileContent ->
+                Encode.object
+                    [ ( "path", Encode.string (File.name file) )
+                    , ( "content", fileContent )
+                    ]
+            )
 
 
 serializeFile : File -> Task x Encode.Value
@@ -450,8 +447,8 @@ serializeFile =
     File.toBytes
         >> Task.map
             (Base64.fromBytes
-                >> Maybe.withDefault ""
-                >> Encode.string
+                >> Maybe.map Encode.string
+                >> Maybe.withDefault Encode.null
             )
 
 
